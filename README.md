@@ -16,25 +16,24 @@ rights, then the pause can serve as an effective check on governance power.
 
 ## Plans
 
-A `plan` describes a single `delegatecall` operation and a unix timestamp `eta` before which it
-cannot be executed.
+A `scheduledTransaction` describes a single `delegatecall` operation and a unix timestamp `earliestExecutionTime` before which it cannot be executed.
 
-A `plan` consists of:
+A `scheduledTransaction` consists of:
 
 - `usr`: address to `delegatecall` into
 - `codeHash`: the expected codehash of `usr`
 - `parameters`: `calldata` to use
-- `eta`: first possible time of execution (as seconds since unix epoch)
+- `earliestExecutionTime`: first possible time of execution (as seconds since unix epoch)
 
-Each plan has a unique id, defined as `keccack256(abi.encode(usr, codeHash, parameters, eta))`
+Each scheduled tx has a unique id, defined as `keccack256(abi.encode(usr, codeHash, parameters, earliestExecutionTime))`
 
 ## Operations
 
 Plans can be manipulated in the following ways:
 
-- **`plot`**: schedule a `plan`
-- **`exec`**: execute a `plan`
-- **`drop`**: cancel a `plan`
+- **`scheduleTransaction`**: create a `scheduledTransaction`
+- **`executeTransaction`**: execute a `scheduledTransaction`
+- **`abandonTransaction`**: cancel a `scheduledTransaction`
 
 ## Invariants
 
@@ -47,29 +46,29 @@ to security@dapp.org.
 - The pause will always retain ownership of it's `proxy`
 
 **admin**
-- `authority`, `owner`, and `delay` can only be changed if an authorized user plots a `plan` to do so
+- `authority`, `owner`, and `delay` can only be changed if an authorized user creates a `scheduledTransaction` to do so
 
-**`plot`**
-- A `plan` can only be plotted if its `eta` is after `block.timestamp + delay`
-- A `plan` can only be plotted by authorized users
+**`scheduledTransactions`**
+- A `scheduledTransaction` can only be plotted if its `earliestExecutionTime` is after `block.timestamp + delay`
+- A `scheduledTransaction` can only be plotted by authorized users
 
-**`exec`**
-- A `plan` can only be executed if it has previously been plotted
-- A `plan` can only be executed once it's `eta` has passed
-- A `plan` can only be executed if its `codeHash` matches `extcodehash(usr)`
-- A `plan` can only be executed once
-- A `plan` can be executed by anyone
+**`executeTransaction`**
+- A `scheduledTransaction` can only be executed if it has previously been plotted
+- A `scheduledTransaction` can only be executed once it's `earliestExecutionTime` has passed
+- A `scheduledTransaction` can only be executed if its `codeHash` matches `extcodehash(usr)`
+- A `scheduledTransaction` can only be executed once
+- A `scheduledTransaction` can be executed by anyone
 
-**`drop`**
-- A `plan` can only be dropped by authorized users
+**`abandonTransaction`**
+- A `scheduledTransaction` can only be dropped by authorized users
 
 ## Identity & Trust
 
-In order to protect the internal storage of the pause from malicious writes during `plan` execution,
+In order to protect the internal storage of the pause from malicious writes during `scheduledTransaction` execution,
 we perform the actual `delegatecall` operation in a seperate contract with an isolated storage
 context (`DSPauseProxy`). Each pause has it's own individual `proxy`.
 
-This means that `plan`'s are executed with the identity of the `proxy`, and when integrating the
+This means that `scheduledTransactions` are executed with the identity of the `proxy`, and when integrating the
 pause into some auth scheme, you probably want to trust the pause's `proxy` and not the pause
 itself.
 
@@ -84,21 +83,21 @@ DSAuthority authority = new DSAuthority();
 
 DSPause pause = new DSPause(delay, owner, authority);
 
-// plot the plan
+// plot the scheduledTransaction
 
 address      usr = address(0x0);
 bytes32      codeHash;  assembly { codeHash := extcodehash(usr) }
 bytes memory parameters = abi.encodeWithSignature("sig()");
-uint         eta = now + delay;
+uint         earliestExecutionTime = now + delay;
 
-pause.scheduleTransaction(usr, codeHash, parameters, eta);
+pause.scheduleTransaction(usr, codeHash, parameters, earliestExecutionTime);
 ```
 
 ```solidity
 // wait until block.timestamp is at least now + delay...
-// and then execute the plan
+// and then execute the scheduledTransaction
 
-bytes memory out = pause.executeTransaction(usr, codeHash, parameters, eta);
+bytes memory out = pause.executeTransaction(usr, codeHash, parameters, earliestExecutionTime);
 ```
 
 ## Tests
