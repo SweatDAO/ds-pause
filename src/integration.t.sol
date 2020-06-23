@@ -13,12 +13,12 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-pragma solidity >=0.5.0 <0.6.0;
+pragma solidity >=0.6.7;
 
 import {DSTest} from "ds-test/test.sol";
 import {DSToken} from "ds-token/token.sol";
 import {DSProxy} from "ds-proxy/proxy.sol";
-import {DSChief, DSChiefFab} from "ds-chief/chief.sol";
+import {VoteQuorum, VoteQuorumFactory} from "ds-vote-quorum/VoteQuorum.sol";
 
 import "./pause.sol";
 
@@ -26,46 +26,46 @@ import "./pause.sol";
 // Test Harness
 // ------------------------------------------------------------------
 
-contract Hevm {
-    function warp(uint) public;
+abstract contract Hevm {
+    function warp(uint) virtual public;
 }
 
 contract Voter {
-    function vote(DSChief chief, address proposal) public {
+    function vote(VoteQuorum voteQuorum, address proposal) public {
         address[] memory votes = new address[](1);
         votes[0] = address(proposal);
-        chief.vote(votes);
+        voteQuorum.vote(votes);
     }
 
-    function lift(DSChief chief, address proposal) external {
-        chief.lift(proposal);
+    function electCandidate(VoteQuorum voteQuorum, address proposal) external {
+        voteQuorum.electCandidate(proposal);
     }
 
-    function lock(DSChief chief, uint amount) public {
-        DSToken gov = chief.GOV();
-        gov.approve(address(chief));
-        chief.lock(amount);
+    function addVotingWeight(VoteQuorum voteQuorum, uint amount) public {
+        DSToken gov = voteQuorum.GOV();
+        gov.approve(address(voteQuorum));
+        voteQuorum.addVotingWeight(amount);
     }
 
-    function free(DSChief chief, uint amount) public {
-        DSToken iou = chief.IOU();
-        iou.approve(address(chief));
-        chief.free(amount);
+    function removeVotingWeight(VoteQuorum voteQuorum, uint amount) public {
+        DSToken iou = voteQuorum.IOU();
+        iou.approve(address(voteQuorum));
+        voteQuorum.removeVotingWeight(amount);
     }
 }
 
 contract Target {
-    mapping (address => uint) public wards;
-    function rely(address usr) public auth { wards[usr] = 1; }
-    function deny(address usr) public auth { wards[usr] = 0; }
-    modifier auth { require(wards[msg.sender] == 1); _; }
+    mapping (address => uint) public authorizedAccounts;
+    function addAuthorization(address usr) public isAuthorized { authorizedAccounts[usr] = 1; }
+    function removeAuthorization(address usr) public isAuthorized { authorizedAccounts[usr] = 0; }
+    modifier isAuthorized { require(authorizedAccounts[msg.sender] == 1); _; }
 
     constructor() public {
-        wards[msg.sender] = 1;
+        authorizedAccounts[msg.sender] = 1;
     }
 
     uint public val = 0;
-    function set(uint val_) public auth {
+    function set(uint val_) public isAuthorized {
         val = val_;
     }
 }
@@ -79,29 +79,29 @@ contract Proposal {
 
     DSPause public pause;
     address public usr;
-    bytes32 public tag;
-    bytes   public fax;
-    uint    public eta;
+    bytes32 public codeHash;
+    bytes   public parameters;
+    uint    public earliestExecutionTime;
 
-    constructor(DSPause pause_, address usr_, bytes32 tag_, bytes memory fax_) public {
+    constructor(DSPause pause_, address usr_, bytes32 codeHash_, bytes memory parameters_) public {
         pause = pause_;
-        tag = tag_;
+        codeHash = codeHash_;
         usr = usr_;
-        fax = fax_;
-        eta = 0;
+        parameters = parameters_;
+        earliestExecutionTime = 0;
     }
 
-    function plot() external {
+    function scheduleTransaction() external {
         require(!plotted);
         plotted = true;
 
-        eta = now + pause.delay();
-        pause.plot(usr, tag, fax, eta);
+        earliestExecutionTime = now + pause.delay();
+        pause.scheduleTransaction(usr, codeHash, parameters, earliestExecutionTime);
     }
 
-    function exec() external returns (bytes memory) {
+    function executeTransaction() external returns (bytes memory) {
         require(plotted);
-        return pause.exec(usr, tag, fax, eta);
+        return pause.executeTransaction(usr, codeHash, parameters, earliestExecutionTime);
     }
 }
 
@@ -112,7 +112,7 @@ contract Proposal {
 contract Test is DSTest {
     // test harness
     Hevm hevm;
-    DSChiefFab chiefFab;
+    VoteQuorumFactory voteQuorumFactory;
     Target target;
     Voter voter;
 
@@ -140,12 +140,12 @@ contract Test is DSTest {
         gov.mint(address(voter), votes);
         gov.setOwner(address(0));
 
-        // chief fab
-        chiefFab = new DSChiefFab();
+        // quorum factory
+        voteQuorumFactory = new VoteQuorumFactory();
     }
 
-    function extcodehash(address usr) internal view returns (bytes32 tag) {
-        assembly { tag := extcodehash(usr) }
+    function extcodehash(address usr) internal view returns (bytes32 ch) {
+        assembly { ch := extcodehash(usr) }
     }
 }
 
@@ -154,7 +154,7 @@ contract Test is DSTest {
 // ------------------------------------------------------------------
 
 contract SimpleAction {
-    function exec(Target target) public {
+    function executeTransaction(Target target) public {
         target.set(1);
     }
 }
@@ -163,39 +163,39 @@ contract Voting is Test {
 
     function test_simple_proposal() public {
         // create gov system
-        DSChief chief = chiefFab.newChief(gov, maxSlateSize);
-        DSPause pause = new DSPause(delay, address(0x0), chief);
-        target.rely(address(pause.proxy()));
-        target.deny(address(this));
+        VoteQuorum voteQuorum = voteQuorumFactory.newVoteQuorum(gov, maxSlateSize);
+        DSPause pause = new DSPause(delay, address(0x0), voteQuorum);
+        target.addAuthorization(address(pause.proxy()));
+        target.removeAuthorization(address(this));
 
         // create proposal
         address      usr = address(new SimpleAction());
-        bytes32      tag = extcodehash(usr);
-        bytes memory fax = abi.encodeWithSignature("exec(address)", target);
+        bytes32      codeHash = extcodehash(usr);
+        bytes memory parameters = abi.encodeWithSignature("executeTransaction(address)", target);
 
-        Proposal proposal = new Proposal(pause, usr, tag, fax);
+        Proposal proposal = new Proposal(pause, usr, codeHash, parameters);
 
         // make proposal the hat
-        voter.lock(chief, votes);
-        voter.vote(chief, address(proposal));
-        voter.lift(chief, address(proposal));
+        voter.addVotingWeight(voteQuorum, votes);
+        voter.vote(voteQuorum, address(proposal));
+        voter.electCandidate(voteQuorum, address(proposal));
 
         // schedule proposal
-        proposal.plot();
+        proposal.scheduleTransaction();
 
-        // wait until eta
-        hevm.warp(proposal.eta());
+        // wait until earliestExecutionTime
+        hevm.warp(proposal.earliestExecutionTime());
 
         // execute proposal
         assertEq(target.val(), 0);
-        proposal.exec();
+        proposal.executeTransaction();
         assertEq(target.val(), 1);
     }
 
 }
 
 // ------------------------------------------------------------------
-// Test Chief Upgrades
+// Test VoteQuorum Upgrades
 // ------------------------------------------------------------------
 
 contract SetAuthority {
@@ -204,56 +204,56 @@ contract SetAuthority {
     }
 }
 
-// Temporary DSAuthority that will give a DSChief authority over a pause only
-// when a prespecified amount of MKR has been locked in the new chief
+// Temporary DSAuthority that will give a VoteQuorum authority over a pause only
+// when a prespecified amount of protocol tokens have been locked in the new vote quorum
 contract Guard is DSAuthority {
     // --- data ---
     DSPause public pause;
-    DSChief public scion; // new chief
-    uint    public limit; // min locked MKR in new chief
+    VoteQuorum public voteQuorum; // new vote quorum
+    uint public limit; // min locked protocol tokens in new vote quorum
 
-    bool public thawed = false;
+    bool public scheduled = false;
 
     address public usr;
-    bytes32 public tag;
-    bytes   public fax;
-    uint    public eta;
+    bytes32 public codeHash;
+    bytes   public parameters;
+    uint    public earliestExecutionTime;
 
     // --- init ---
 
-    constructor(DSPause pause_, DSChief scion_, uint limit_) public {
+    constructor(DSPause pause_, VoteQuorum voteQuorum_, uint limit_) public {
         pause = pause_;
-        scion = scion_;
+        voteQuorum = voteQuorum_;
         limit = limit_;
 
         usr = address(new SetAuthority());
-        tag = extcodehash(usr);
-        fax = abi.encodeWithSignature( "set(address,address)", pause, scion);
+        codeHash = extcodehash(usr);
+        parameters = abi.encodeWithSignature("set(address,address)", pause, voteQuorum);
     }
 
     // --- auth ---
 
-    function canCall(address src, address dst, bytes4 sig) public view returns (bool) {
+    function canCall(address src, address dst, bytes4 sig) override public view returns (bool) {
         require(src == address(this));
         require(dst == address(pause));
-        require(sig == bytes4(keccak256("plot(address,bytes32,bytes,uint256)")));
+        require(sig == bytes4(keccak256("scheduleTransaction(address,bytes32,bytes,uint256)")));
         return true;
     }
 
     // --- unlock ---
 
-    function thaw() external {
-        require(scion.GOV().balanceOf(address(scion)) >= limit);
-        require(!thawed);
-        thawed = true;
+    function scheduleTransaction() external {
+        require(voteQuorum.GOV().balanceOf(address(voteQuorum)) >= limit);
+        require(!scheduled);
+        scheduled = true;
 
-        eta = now + pause.delay();
-        pause.plot(usr, tag, fax, eta);
+        earliestExecutionTime = now + pause.delay();
+        pause.scheduleTransaction(usr, codeHash, parameters, earliestExecutionTime);
     }
 
-    function free() external returns (bytes memory) {
-        require(thawed);
-        return pause.exec(usr, tag, fax, eta);
+    function executeTransaction() external returns (bytes memory) {
+        require(scheduled);
+        return pause.executeTransaction(usr, codeHash, parameters, earliestExecutionTime);
     }
 
     // --- util ---
@@ -264,57 +264,57 @@ contract Guard is DSAuthority {
 }
 
 
-contract UpgradeChief is Test {
+contract UpgradeVoteQuorum is Test {
 
-    function test_chief_upgrade() public {
+    function test_quorum_upgrade() public {
         // create gov system
-        DSChief oldChief = chiefFab.newChief(gov, maxSlateSize);
-        DSPause pause = new DSPause(delay, address(0x0), oldChief);
+        VoteQuorum oldVoteQuorum = voteQuorumFactory.newVoteQuorum(gov, maxSlateSize);
+        DSPause pause = new DSPause(delay, address(0x0), oldVoteQuorum);
 
         // make pause the only owner of the target
-        target.rely(address(pause.proxy()));
-        target.deny(address(this));
+        target.addAuthorization(address(pause.proxy()));
+        target.removeAuthorization(address(this));
 
-        // create new chief
-        DSChief newChief = chiefFab.newChief(gov, maxSlateSize);
+        // create new quorum
+        VoteQuorum newVoteQuorum = voteQuorumFactory.newVoteQuorum(gov, maxSlateSize);
 
         // create guard
-        Guard guard = new Guard(pause, newChief, votes);
+        Guard guard = new Guard(pause, newVoteQuorum, votes);
 
-        // create gov proposal to transfer ownership from the old chief to the guard
+        // create gov proposal to transfer ownership from the old quorum to the guard
         address      usr = address(new SetAuthority());
-        bytes32      tag = extcodehash(usr);
-        bytes memory fax = abi.encodeWithSignature("set(address,address)", pause, guard);
+        bytes32      codeHash = extcodehash(usr);
+        bytes memory parameters = abi.encodeWithSignature("set(address,address)", pause, guard);
 
-        Proposal proposal = new Proposal(pause, usr, tag, fax);
+        Proposal proposal = new Proposal(pause, usr, codeHash, parameters);
 
-        // check that the old chief is the authority
-        assertEq(address(pause.authority()), address(oldChief));
+        // check that the old quorum is the authority
+        assertEq(address(pause.authority()), address(oldVoteQuorum));
 
         // vote for proposal
-        voter.lock(oldChief, votes);
-        voter.vote(oldChief, address(proposal));
-        voter.lift(oldChief, address(proposal));
+        voter.addVotingWeight(oldVoteQuorum, votes);
+        voter.vote(oldVoteQuorum, address(proposal));
+        voter.electCandidate(oldVoteQuorum, address(proposal));
 
-        // transfer ownership from old chief to guard
-        proposal.plot();
-        hevm.warp(proposal.eta());
-        proposal.exec();
+        // transfer ownership from old quorum to guard
+        proposal.scheduleTransaction();
+        hevm.warp(proposal.earliestExecutionTime());
+        proposal.executeTransaction();
 
         // check that the guard is the authority
         assertEq(address(pause.authority()), address(guard));
 
-        // move MKR from old chief to new chief
-        voter.free(oldChief, votes);
-        voter.lock(newChief, votes);
+        // move protocol tokens from old quorum to new quorum
+        voter.removeVotingWeight(oldVoteQuorum, votes);
+        voter.addVotingWeight(newVoteQuorum, votes);
 
-        // plot plan to transfer ownership from guard to newChief
-        guard.thaw();
-        hevm.warp(guard.eta());
-        guard.free();
+        // plot plan to transfer ownership from guard to newVoteQuorum
+        guard.scheduleTransaction();
+        hevm.warp(guard.earliestExecutionTime());
+        guard.executeTransaction();
 
-        // check that the new chief is the authority
-        assertEq(address(pause.authority()), address(newChief));
+        // check that the new quorum is the authority
+        assertEq(address(pause.authority()), address(newVoteQuorum));
     }
 
 }

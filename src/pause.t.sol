@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-pragma solidity >=0.5.0 <0.6.0;
+pragma solidity >=0.6.7;
 
 import {DSTest} from "ds-test/test.sol";
 import {DSAuth, DSAuthority} from "ds-auth/auth.sol";
@@ -24,8 +24,8 @@ import {DSPause} from "./pause.sol";
 // Test Harness
 // ------------------------------------------------------------------
 
-contract Hevm {
-    function warp(uint) public;
+abstract contract Hevm {
+    function warp(uint) virtual public;
 }
 
 contract Target {
@@ -40,16 +40,16 @@ contract Target {
 }
 
 contract Stranger {
-    function plot(DSPause pause, address usr, bytes32 tag, bytes memory fax, uint eta) public {
-        pause.plot(usr, tag, fax, eta);
+    function scheduleTransaction(DSPause pause, address usr, bytes32 codeHash, bytes memory parameters, uint eta) public {
+        pause.scheduleTransaction(usr, codeHash, parameters, eta);
     }
-    function drop(DSPause pause, address usr, bytes32 tag, bytes memory fax, uint eta) public {
-        pause.drop(usr, tag, fax, eta);
+    function abandonTransaction(DSPause pause, address usr, bytes32 codeHash, bytes memory parameters, uint eta) public {
+        pause.abandonTransaction(usr, codeHash, parameters, eta);
     }
-    function exec(DSPause pause, address usr, bytes32 tag, bytes memory fax, uint eta)
+    function executeTransaction(DSPause pause, address usr, bytes32 codeHash, bytes memory parameters, uint eta)
         public returns (bytes memory)
     {
-        return pause.exec(usr, tag, fax, eta);
+        return pause.executeTransaction(usr, codeHash, parameters, eta);
     }
 }
 
@@ -61,6 +61,7 @@ contract Authority is DSAuthority {
     }
 
     function canCall(address src, address, bytes4)
+        override
         public
         view
         returns (bool)
@@ -100,8 +101,8 @@ contract Test is DSTest {
         }
     }
 
-    function extcodehash(address usr) internal view returns (bytes32 tag) {
-        assembly { tag := extcodehash(usr) }
+    function extcodehash(address usr) internal view returns (bytes32 ch) {
+        assembly { ch := extcodehash(usr) }
     }
 }
 
@@ -155,13 +156,13 @@ contract Admin is Test {
 
     function test_set_owner_with_delay() public {
         address      usr = address(new AdminScripts());
-        bytes32      tag = extcodehash(usr);
-        bytes memory fax = abi.encodeWithSignature("setOwner(address,address)", pause, 0xdeadbeef);
+        bytes32      codeHash = extcodehash(usr);
+        bytes memory parameters = abi.encodeWithSignature("setOwner(address,address)", pause, 0xdeadbeef);
         uint         eta = now + pause.delay();
 
-        pause.plot(usr, tag, fax, eta);
+        pause.scheduleTransaction(usr, codeHash, parameters, eta);
         hevm.warp(eta);
-        pause.exec(usr, tag, fax, eta);
+        pause.executeTransaction(usr, codeHash, parameters, eta);
 
         assertEq(address(pause.owner()), address(0xdeadbeef));
     }
@@ -176,13 +177,13 @@ contract Admin is Test {
         DSAuthority newAuthority = new Authority();
 
         address      usr = address(new AdminScripts());
-        bytes32      tag = extcodehash(usr);
-        bytes memory fax = abi.encodeWithSignature("setAuthority(address,address)", pause, newAuthority);
+        bytes32      codeHash = extcodehash(usr);
+        bytes memory parameters = abi.encodeWithSignature("setAuthority(address,address)", pause, newAuthority);
         uint         eta = now + pause.delay();
 
-        pause.plot(usr, tag, fax, eta);
+        pause.scheduleTransaction(usr, codeHash, parameters, eta);
         hevm.warp(eta);
-        pause.exec(usr, tag, fax, eta);
+        pause.executeTransaction(usr, codeHash, parameters, eta);
 
         assertEq(address(pause.authority()), address(newAuthority));
     }
@@ -195,13 +196,13 @@ contract Admin is Test {
 
     function test_set_delay_with_delay() public {
         address      usr = address(new AdminScripts());
-        bytes32      tag = extcodehash(usr);
-        bytes memory fax = abi.encodeWithSignature("setDelay(address,uint256)", pause, 0);
+        bytes32      codeHash = extcodehash(usr);
+        bytes memory parameters = abi.encodeWithSignature("setDelay(address,uint256)", pause, 0);
         uint         eta = now + pause.delay();
 
-        pause.plot(usr, tag, fax, eta);
+        pause.scheduleTransaction(usr, codeHash, parameters, eta);
         hevm.warp(eta);
-        pause.exec(usr, tag, fax, eta);
+        pause.executeTransaction(usr, codeHash, parameters, eta);
 
         assertEq(pause.delay(), 0);
     }
@@ -211,32 +212,32 @@ contract Plot is Test {
 
     function testFail_call_from_unauthorized() public {
         address      usr = target;
-        bytes32      tag = extcodehash(usr);
-        bytes memory fax = abi.encodeWithSignature("get()");
+        bytes32      codeHash = extcodehash(usr);
+        bytes memory parameters = abi.encodeWithSignature("get()");
         uint         eta = now + pause.delay();
 
-        stranger.plot(pause, usr, tag, fax, eta);
+        stranger.scheduleTransaction(pause, usr, codeHash, parameters, eta);
     }
 
     function testFail_plot_eta_too_soon() public {
         address      usr = target;
-        bytes32      tag = extcodehash(usr);
-        bytes memory fax = abi.encodeWithSignature("get()");
+        bytes32      codeHash = extcodehash(usr);
+        bytes memory parameters = abi.encodeWithSignature("get()");
         uint         eta = now;
 
-        pause.plot(usr, tag, fax, eta);
+        pause.scheduleTransaction(usr, codeHash, parameters, eta);
     }
 
-    function test_plot_populates_plans_mapping() public {
+    function test_plot_populates_scheduled_transactions_mapping() public {
         address      usr = target;
-        bytes32      tag = extcodehash(usr);
-        bytes memory fax = abi.encodeWithSignature("get()");
+        bytes32      codeHash = extcodehash(usr);
+        bytes memory parameters = abi.encodeWithSignature("get()");
         uint         eta = now + pause.delay();
 
-        pause.plot(usr, tag, fax, eta);
+        pause.scheduleTransaction(usr, codeHash, parameters, eta);
 
-        bytes32 id = keccak256(abi.encode(usr, tag, fax, eta));
-        assertTrue(pause.plans(id));
+        bytes32 id = keccak256(abi.encode(usr, codeHash, parameters, eta));
+        assertTrue(pause.scheduledTransactions(id));
     }
 
 }
@@ -245,84 +246,84 @@ contract Exec is Test {
 
     function testFail_delay_not_passed() public {
         address      usr = target;
-        bytes32      tag = extcodehash(usr);
-        bytes memory fax = abi.encode(0);
+        bytes32      codeHash = extcodehash(usr);
+        bytes memory parameters = abi.encode(0);
         uint         eta = now + pause.delay();
 
-        pause.plot(usr, tag, fax, eta);
-        pause.exec(usr, tag, fax, eta);
+        pause.scheduleTransaction(usr, codeHash, parameters, eta);
+        pause.executeTransaction(usr, codeHash, parameters, eta);
     }
 
     function testFail_double_execution() public {
         address      usr = target;
-        bytes32      tag = extcodehash(usr);
-        bytes memory fax = abi.encodeWithSignature("get()");
+        bytes32      codeHash = extcodehash(usr);
+        bytes memory parameters = abi.encodeWithSignature("get()");
         uint         eta = now + pause.delay();
 
-        pause.plot(usr, tag, fax, eta);
+        pause.scheduleTransaction(usr, codeHash, parameters, eta);
         hevm.warp(eta);
-        pause.exec(usr, tag, fax, eta);
-        pause.exec(usr, tag, fax, eta);
+        pause.executeTransaction(usr, codeHash, parameters, eta);
+        pause.executeTransaction(usr, codeHash, parameters, eta);
     }
 
-    function testFail_tag_mismatch() public {
+    function testFail_codeHash_mismatch() public {
         address      usr = target;
-        bytes32      tag = bytes32("INCORRECT_CODEHASH");
-        bytes memory fax = abi.encodeWithSignature("get()");
+        bytes32      codeHash = bytes32("INCORRECT_CODEHASH");
+        bytes memory parameters = abi.encodeWithSignature("get()");
         uint         eta = now + pause.delay();
 
-        pause.plot(usr, tag, fax, eta);
+        pause.scheduleTransaction(usr, codeHash, parameters, eta);
         hevm.warp(eta);
-        pause.exec(usr, tag, fax, eta);
+        pause.executeTransaction(usr, codeHash, parameters, eta);
     }
 
     function testFail_exec_plan_with_proxy_ownership_change() public {
         address      usr = target;
-        bytes32      tag = extcodehash(usr);
-        bytes memory fax = abi.encodeWithSignature("give(address)", address(this));
+        bytes32      codeHash = extcodehash(usr);
+        bytes memory parameters = abi.encodeWithSignature("give(address)", address(this));
         uint         eta = now + pause.delay();
 
-        pause.plot(usr, tag, fax, eta);
+        pause.scheduleTransaction(usr, codeHash, parameters, eta);
         hevm.warp(eta);
-        pause.exec(usr, tag, fax, eta);
+        pause.executeTransaction(usr, codeHash, parameters, eta);
     }
 
     function test_suceeds_when_delay_passed() public {
         address      usr = target;
-        bytes32      tag = extcodehash(usr);
-        bytes memory fax = abi.encodeWithSignature("get()");
+        bytes32      codeHash = extcodehash(usr);
+        bytes memory parameters = abi.encodeWithSignature("get()");
         uint         eta = now + pause.delay();
 
-        pause.plot(usr, tag, fax, eta);
+        pause.scheduleTransaction(usr, codeHash, parameters, eta);
         hevm.warp(eta);
-        bytes memory out = pause.exec(usr, tag, fax, eta);
+        bytes memory out = pause.executeTransaction(usr, codeHash, parameters, eta);
 
         assertEq(b32(out), bytes32("Hello"));
     }
 
     function test_suceeds_when_called_from_unauthorized() public {
         address      usr = target;
-        bytes32      tag = extcodehash(usr);
-        bytes memory fax = abi.encodeWithSignature("get()");
+        bytes32      codeHash = extcodehash(usr);
+        bytes memory parameters = abi.encodeWithSignature("get()");
         uint         eta = now + pause.delay();
 
-        pause.plot(usr, tag, fax, eta);
+        pause.scheduleTransaction(usr, codeHash, parameters, eta);
         hevm.warp(eta);
 
-        bytes memory out = stranger.exec(pause, usr, tag, fax, eta);
+        bytes memory out = stranger.executeTransaction(pause, usr, codeHash, parameters, eta);
         assertEq(b32(out), bytes32("Hello"));
     }
 
     function test_suceeds_when_called_from_authorized() public {
         address      usr = target;
-        bytes32      tag = extcodehash(usr);
-        bytes memory fax = abi.encodeWithSignature("get()");
+        bytes32      codeHash = extcodehash(usr);
+        bytes memory parameters = abi.encodeWithSignature("get()");
         uint         eta = now + pause.delay();
 
-        pause.plot(usr, tag, fax, eta);
+        pause.scheduleTransaction(usr, codeHash, parameters, eta);
         hevm.warp(eta);
 
-        bytes memory out = pause.exec(usr, tag, fax, eta);
+        bytes memory out = pause.executeTransaction(usr, codeHash, parameters, eta);
         assertEq(b32(out), bytes32("Hello"));
     }
 
@@ -332,29 +333,29 @@ contract Drop is Test {
 
     function testFail_call_from_unauthorized() public {
         address      usr = target;
-        bytes32      tag = extcodehash(usr);
-        bytes memory fax = abi.encodeWithSignature("get()");
+        bytes32      codeHash = extcodehash(usr);
+        bytes memory parameters = abi.encodeWithSignature("get()");
         uint         eta = now + pause.delay();
 
-        pause.plot(usr, tag, fax, eta);
+        pause.scheduleTransaction(usr, codeHash, parameters, eta);
         hevm.warp(eta);
 
-        stranger.drop(pause, usr, tag, fax, eta);
+        stranger.abandonTransaction(pause, usr, codeHash, parameters, eta);
     }
 
     function test_drop_plotted_plan() public {
         address      usr = target;
-        bytes32      tag = extcodehash(usr);
-        bytes memory fax = abi.encodeWithSignature("get()");
+        bytes32      codeHash = extcodehash(usr);
+        bytes memory parameters = abi.encodeWithSignature("get()");
         uint         eta = now + pause.delay();
 
-        pause.plot(usr, tag, fax, eta);
+        pause.scheduleTransaction(usr, codeHash, parameters, eta);
 
         hevm.warp(eta);
-        pause.drop(usr, tag, fax, eta);
+        pause.abandonTransaction(usr, codeHash, parameters, eta);
 
-        bytes32 id = keccak256(abi.encode(usr, tag, fax, eta));
-        assertTrue(!pause.plans(id));
+        bytes32 id = keccak256(abi.encode(usr, codeHash, parameters, eta));
+        assertTrue(!pause.scheduledTransactions(id));
     }
 
 }

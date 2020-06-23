@@ -22,11 +22,11 @@ cannot be executed.
 A `plan` consists of:
 
 - `usr`: address to `delegatecall` into
-- `tag`: the expected codehash of `usr`
-- `fax`: `calldata` to use
+- `codeHash`: the expected codehash of `usr`
+- `parameters`: `calldata` to use
 - `eta`: first possible time of execution (as seconds since unix epoch)
 
-Each plan has a unique id, defined as `keccack256(abi.encode(usr, tag, fax, eta))`
+Each plan has a unique id, defined as `keccack256(abi.encode(usr, codeHash, parameters, eta))`
 
 ## Operations
 
@@ -56,7 +56,7 @@ to security@dapp.org.
 **`exec`**
 - A `plan` can only be executed if it has previously been plotted
 - A `plan` can only be executed once it's `eta` has passed
-- A `plan` can only be executed if its `tag` matches `extcodehash(usr)`
+- A `plan` can only be executed if its `codeHash` matches `extcodehash(usr)`
 - A `plan` can only be executed once
 - A `plan` can be executed by anyone
 
@@ -87,22 +87,21 @@ DSPause pause = new DSPause(delay, owner, authority);
 // plot the plan
 
 address      usr = address(0x0);
-bytes32      tag;  assembly { tag := extcodehash(usr) }
-bytes memory fax = abi.encodeWithSignature("sig()");
+bytes32      codeHash;  assembly { codeHash := extcodehash(usr) }
+bytes memory parameters = abi.encodeWithSignature("sig()");
 uint         eta = now + delay;
 
-pause.plot(usr, tag, fax, eta);
+pause.scheduleTransaction(usr, codeHash, parameters, eta);
 ```
 
 ```solidity
 // wait until block.timestamp is at least now + delay...
 // and then execute the plan
 
-bytes memory out = pause.exec(usr, tag, fax, eta);
+bytes memory out = pause.executeTransaction(usr, codeHash, parameters, eta);
 ```
 
 ## Tests
 
 - [`pause.t.sol`](./pause.t.sol): unit tests
 - [`integration.t.sol`](./integration.t.sol): usage examples / integation tests
-

@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-pragma solidity >=0.5.0 <0.6.0;
+pragma solidity >=0.6.7;
 
 import {DSNote} from "ds-note/note.sol";
 import {DSAuth, DSAuthority} from "ds-auth/auth.sol";
@@ -22,30 +22,30 @@ contract DSPause is DSAuth, DSNote {
 
     // --- admin ---
 
-    modifier wait { require(msg.sender == address(proxy), "ds-pause-undelayed-call"); _; }
+    modifier isDelayed { require(msg.sender == address(proxy), "ds-pause-undelayed-call"); _; }
 
-    function setOwner(address owner_) public wait {
+    function setOwner(address owner_) override public isDelayed {
         owner = owner_;
         emit LogSetOwner(owner);
     }
-    function setAuthority(DSAuthority authority_) public wait {
+    function setAuthority(DSAuthority authority_) override public isDelayed {
         authority = authority_;
         emit LogSetAuthority(address(authority));
     }
-    function setDelay(uint delay_) public note wait {
+    function setDelay(uint delay_) public note isDelayed {
         delay = delay_;
     }
 
     // --- math ---
 
-    function add(uint x, uint y) internal pure returns (uint z) {
+    function addition(uint x, uint y) internal pure returns (uint z) {
         z = x + y;
-        require(z >= x, "ds-pause-addition-overflow");
+        require(z >= x, "ds-pause-add-overflow");
     }
 
     // --- data ---
 
-    mapping (bytes32 => bool) public plans;
+    mapping (bytes32 => bool) public scheduledTransactions;
     DSPauseProxy public proxy;
     uint         public delay;
 
@@ -60,63 +60,63 @@ contract DSPause is DSAuth, DSNote {
 
     // --- util ---
 
-    function hash(address usr, bytes32 tag, bytes memory fax, uint eta)
+    function getTransactionDataHash(address usr, bytes32 codeHash, bytes memory parameters, uint earliestExecutionTime)
         internal pure
         returns (bytes32)
     {
-        return keccak256(abi.encode(usr, tag, fax, eta));
+        return keccak256(abi.encode(usr, codeHash, parameters, earliestExecutionTime));
     }
 
-    function soul(address usr)
+    function getExtCodeHash(address usr)
         internal view
-        returns (bytes32 tag)
+        returns (bytes32 codeHash)
     {
-        assembly { tag := extcodehash(usr) }
+        assembly { codeHash := extcodehash(usr) }
     }
 
     // --- operations ---
 
-    function plot(address usr, bytes32 tag, bytes memory fax, uint eta)
+    function scheduleTransaction(address usr, bytes32 codeHash, bytes memory parameters, uint earliestExecutionTime)
         public note auth
     {
-        require(eta >= add(now, delay), "ds-pause-delay-not-respected");
-        plans[hash(usr, tag, fax, eta)] = true;
+        require(earliestExecutionTime >= addition(now, delay), "ds-pause-delay-not-respected");
+        scheduledTransactions[getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime)] = true;
     }
 
-    function drop(address usr, bytes32 tag, bytes memory fax, uint eta)
+    function abandonTransaction(address usr, bytes32 codeHash, bytes memory parameters, uint earliestExecutionTime)
         public note auth
     {
-        plans[hash(usr, tag, fax, eta)] = false;
+        scheduledTransactions[getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime)] = false;
     }
 
-    function exec(address usr, bytes32 tag, bytes memory fax, uint eta)
+    function executeTransaction(address usr, bytes32 codeHash, bytes memory parameters, uint earliestExecutionTime)
         public note
         returns (bytes memory out)
     {
-        require(plans[hash(usr, tag, fax, eta)], "ds-pause-unplotted-plan");
-        require(soul(usr) == tag,                "ds-pause-wrong-codehash");
-        require(now >= eta,                      "ds-pause-premature-exec");
+        require(scheduledTransactions[getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime)], "ds-pause-unplotted-plan");
+        require(getExtCodeHash(usr) == codeHash, "ds-pause-wrong-codehash");
+        require(now >= earliestExecutionTime, "ds-pause-premature-exec");
 
-        plans[hash(usr, tag, fax, eta)] = false;
+        scheduledTransactions[getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime)] = false;
 
-        out = proxy.exec(usr, fax);
+        out = proxy.executeTransaction(usr, parameters);
         require(proxy.owner() == address(this), "ds-pause-illegal-storage-change");
     }
 }
 
-// plans are executed in an isolated storage context to protect the pause from
+// scheduled txs are executed in an isolated storage context to protect the pause from
 // malicious storage modification during plan execution
 contract DSPauseProxy {
     address public owner;
-    modifier auth { require(msg.sender == owner, "ds-pause-proxy-unauthorized"); _; }
+    modifier isAuthorized { require(msg.sender == owner, "ds-pause-proxy-unauthorized"); _; }
     constructor() public { owner = msg.sender; }
 
-    function exec(address usr, bytes memory fax)
-        public auth
+    function executeTransaction(address usr, bytes memory parameters)
+        public isAuthorized
         returns (bytes memory out)
     {
         bool ok;
-        (ok, out) = usr.delegatecall(fax);
+        (ok, out) = usr.delegatecall(parameters);
         require(ok, "ds-pause-delegatecall-error");
     }
 }
