@@ -42,7 +42,7 @@ contract Voter {
     }
 
     function addVotingWeight(VoteQuorum voteQuorum, uint amount) public {
-        DSToken gov = voteQuorum.GOV();
+        DSToken gov = voteQuorum.PROT();
         gov.approve(address(voteQuorum));
         voteQuorum.addVotingWeight(amount);
     }
@@ -136,7 +136,7 @@ contract Test is DSTest {
         voter = new Voter();
 
         // create gov token
-        gov = new DSToken("GOV");
+        gov = new DSToken("PROT");
         gov.mint(address(voter), votes);
         gov.setOwner(address(0));
 
@@ -243,7 +243,7 @@ contract Guard is DSAuthority {
     // --- unlock ---
 
     function scheduleTransaction() external {
-        require(voteQuorum.GOV().balanceOf(address(voteQuorum)) >= limit);
+        require(voteQuorum.PROT().balanceOf(address(voteQuorum)) >= limit);
         require(!scheduled);
         scheduled = true;
 
