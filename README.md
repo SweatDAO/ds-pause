@@ -14,26 +14,7 @@ time.
 time to respond to decisions. If those affected by governance decisions have e.g. exit or veto
 rights, then the pause can serve as an effective check on governance power.
 
-## Plans
-
-A `scheduledTransaction` describes a single `delegatecall` operation and a unix timestamp `earliestExecutionTime` before which it cannot be executed.
-
-A `scheduledTransaction` consists of:
-
-- `usr`: address to `delegatecall` into
-- `codeHash`: the expected codehash of `usr`
-- `parameters`: `calldata` to use
-- `earliestExecutionTime`: first possible time of execution (as seconds since unix epoch)
-
-Each scheduled tx has a unique id, defined as `keccack256(abi.encode(usr, codeHash, parameters, earliestExecutionTime))`
-
-## Operations
-
-Plans can be manipulated in the following ways:
-
-- **`scheduleTransaction`**: create a `scheduledTransaction`
-- **`executeTransaction`**: execute a `scheduledTransaction`
-- **`abandonTransaction`**: cancel a `scheduledTransaction`
+Check out the more comprehensive [documentation](https://docs.reflexer.finance/system-contracts/governance-module/ds-pause).
 
 ## Invariants
 
@@ -61,16 +42,6 @@ to security@dapp.org.
 
 **`abandonTransaction`**
 - A `scheduledTransaction` can only be dropped by authorized users
-
-## Identity & Trust
-
-In order to protect the internal storage of the pause from malicious writes during `scheduledTransaction` execution,
-we perform the actual `delegatecall` operation in a seperate contract with an isolated storage
-context (`DSPauseProxy`). Each pause has it's own individual `proxy`.
-
-This means that `scheduledTransactions` are executed with the identity of the `proxy`, and when integrating the
-pause into some auth scheme, you probably want to trust the pause's `proxy` and not the pause
-itself.
 
 ## Example Usage
 

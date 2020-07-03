@@ -308,7 +308,7 @@ contract UpgradeVoteQuorum is Test {
         voter.removeVotingWeight(oldVoteQuorum, votes);
         voter.addVotingWeight(newVoteQuorum, votes);
 
-        // plot plan to transfer ownership from guard to newVoteQuorum
+        // plot transaction to transfer ownership from guard to newVoteQuorum
         guard.scheduleTransaction();
         hevm.warp(guard.earliestExecutionTime());
         guard.executeTransaction();
