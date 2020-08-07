@@ -24,11 +24,11 @@ contract DSPause is DSAuth, DSNote {
 
     modifier isDelayed { require(msg.sender == address(proxy), "ds-pause-undelayed-call"); _; }
 
-    function setOwner(address owner_) override public isDelayed {
+    function setOwner(address owner_) override public note isDelayed {
         owner = owner_;
         emit LogSetOwner(owner);
     }
-    function setAuthority(DSAuthority authority_) override public isDelayed {
+    function setAuthority(DSAuthority authority_) override public note isDelayed {
         authority = authority_;
         emit LogSetAuthority(address(authority));
     }
@@ -48,6 +48,12 @@ contract DSPause is DSAuth, DSNote {
     mapping (bytes32 => bool) public scheduledTransactions;
     DSPauseProxy public proxy;
     uint         public delay;
+
+    // --- events ---
+
+    event ScheduleTransaction(address sender, address usr, bytes32 codeHash, bytes parameters, uint earliestExecutionTime);
+    event AbandonTransaction(address sender, address usr, bytes32 codeHash, bytes parameters, uint earliestExecutionTime);
+    event ExecuteTransaction(address sender, address usr, bytes32 codeHash, bytes parameters, uint earliestExecutionTime);
 
     // --- init ---
 
@@ -81,12 +87,14 @@ contract DSPause is DSAuth, DSNote {
     {
         require(earliestExecutionTime >= addition(now, delay), "ds-pause-delay-not-respected");
         scheduledTransactions[getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime)] = true;
+        emit ScheduleTransaction(msg.sender, usr, codeHash, parameters, earliestExecutionTime);
     }
 
     function abandonTransaction(address usr, bytes32 codeHash, bytes memory parameters, uint earliestExecutionTime)
         public note auth
     {
         scheduledTransactions[getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime)] = false;
+        emit AbandonTransaction(msg.sender, usr, codeHash, parameters, earliestExecutionTime);
     }
 
     function executeTransaction(address usr, bytes32 codeHash, bytes memory parameters, uint earliestExecutionTime)
@@ -98,6 +106,8 @@ contract DSPause is DSAuth, DSNote {
         require(now >= earliestExecutionTime, "ds-pause-premature-exec");
 
         scheduledTransactions[getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime)] = false;
+
+        emit ExecuteTransaction(msg.sender, usr, codeHash, parameters, earliestExecutionTime);
 
         out = proxy.executeTransaction(usr, parameters);
         require(proxy.owner() == address(this), "ds-pause-illegal-storage-change");
