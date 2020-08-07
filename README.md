@@ -19,7 +19,7 @@ Check out the more comprehensive [documentation](https://docs.reflexer.finance/s
 ## Invariants
 
 A break of any of the following would be classified as a critical issue. Please submit bug reports
-to security@dapp.org.
+to security@reflexer.finance.
 
 **high level**
 - There is no way to bypass the delay
