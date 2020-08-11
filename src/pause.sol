@@ -19,21 +19,20 @@ import {DSNote} from "ds-note/note.sol";
 import {DSAuth, DSAuthority} from "ds-auth/auth.sol";
 
 contract DSPause is DSAuth, DSNote {
-
-    // --- admin ---
-
+    // --- Admin ---
     modifier isDelayed { require(msg.sender == address(proxy), "ds-pause-undelayed-call"); _; }
 
-    function setOwner(address owner_) override public note isDelayed {
+    function setOwner(address owner_) override public isDelayed {
         owner = owner_;
         emit LogSetOwner(owner);
     }
-    function setAuthority(DSAuthority authority_) override public note isDelayed {
+    function setAuthority(DSAuthority authority_) override public isDelayed {
         authority = authority_;
         emit LogSetAuthority(address(authority));
     }
-    function setDelay(uint delay_) public note isDelayed {
+    function setDelay(uint delay_) public isDelayed {
         delay = delay_;
+        emit SetDelay(delay_);
     }
 
     // --- math ---
@@ -43,20 +42,18 @@ contract DSPause is DSAuth, DSNote {
         require(z >= x, "ds-pause-add-overflow");
     }
 
-    // --- data ---
-
+    // --- Data ---
     mapping (bytes32 => bool) public scheduledTransactions;
     DSPauseProxy public proxy;
     uint         public delay;
 
-    // --- events ---
-
+    // --- Events ---
+    event SetDelay(uint256 delay);
     event ScheduleTransaction(address sender, address usr, bytes32 codeHash, bytes parameters, uint earliestExecutionTime);
     event AbandonTransaction(address sender, address usr, bytes32 codeHash, bytes parameters, uint earliestExecutionTime);
     event ExecuteTransaction(address sender, address usr, bytes32 codeHash, bytes parameters, uint earliestExecutionTime);
 
-    // --- init ---
-
+    // --- Init ---
     constructor(uint delay_, address owner_, DSAuthority authority_) public {
         delay = delay_;
         owner = owner_;
@@ -64,8 +61,7 @@ contract DSPause is DSAuth, DSNote {
         proxy = new DSPauseProxy();
     }
 
-    // --- util ---
-
+    // --- Util ---
     function getTransactionDataHash(address usr, bytes32 codeHash, bytes memory parameters, uint earliestExecutionTime)
         internal pure
         returns (bytes32)
@@ -80,25 +76,22 @@ contract DSPause is DSAuth, DSNote {
         assembly { codeHash := extcodehash(usr) }
     }
 
-    // --- operations ---
-
+    // --- Operations ---
     function scheduleTransaction(address usr, bytes32 codeHash, bytes memory parameters, uint earliestExecutionTime)
-        public note auth
+        public auth
     {
         require(earliestExecutionTime >= addition(now, delay), "ds-pause-delay-not-respected");
         scheduledTransactions[getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime)] = true;
         emit ScheduleTransaction(msg.sender, usr, codeHash, parameters, earliestExecutionTime);
     }
-
     function abandonTransaction(address usr, bytes32 codeHash, bytes memory parameters, uint earliestExecutionTime)
-        public note auth
+        public auth
     {
         scheduledTransactions[getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime)] = false;
         emit AbandonTransaction(msg.sender, usr, codeHash, parameters, earliestExecutionTime);
     }
-
     function executeTransaction(address usr, bytes32 codeHash, bytes memory parameters, uint earliestExecutionTime)
-        public note
+        public
         returns (bytes memory out)
     {
         require(scheduledTransactions[getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime)], "ds-pause-unplotted-plan");
