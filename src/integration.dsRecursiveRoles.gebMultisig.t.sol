@@ -17,7 +17,9 @@ pragma solidity >=0.6.7;
 
 import {DSTest} from "ds-test/test.sol";
 import {DSProxy} from "ds-proxy/proxy.sol";
-import {DSRoles} from "ds-roles/roles.sol";
+import {DSRecursiveRoles} from "ds-roles/recursive_roles.sol";
+import {DSToken} from "ds-token/token.sol";
+import {VoteQuorum, VoteQuorumFactory} from "ds-vote-quorum/VoteQuorum.sol";
 import {MultiSigWallet} from "geb-basic-multisig/MultisigWallet.sol";
 
 import "./pause.sol";
@@ -57,14 +59,22 @@ contract Test is DSTest {
     Hevm hevm;
     Target target;
     MultiSigWallet multisig;
+    VoteQuorumFactory voteQuorumFactory;
 
 
     // pause timings
     uint delay = 1 days;
 
-    // gov constants
+    // multisig constants
     address[] owners = [msg.sender];
     uint required = 1;
+
+    // gov constants
+    uint votes = 100;
+    uint maxSlateSize = 1;
+
+    // gov token
+    DSToken gov;
 
     function setUp() public {
         // init hevm
@@ -73,6 +83,14 @@ contract Test is DSTest {
 
         // create test harness
         target = new Target();
+
+        // create gov token
+        gov = new DSToken("PROT");
+        // gov.mint(address(voter), votes);
+        gov.setOwner(address(0));
+
+        // quorum factory
+        voteQuorumFactory = new VoteQuorumFactory();
     }
 
     function extcodehash(address usr) internal view returns (bytes32 ch) {
@@ -94,10 +112,11 @@ contract MultisigIntegration is Test {
 
     function test_simple_proposal() public {
 
-        DSRoles roles = new DSRoles();
+        DSRecursiveRoles roles = new DSRecursiveRoles();
         DSPause pause = new DSPause(delay, msg.sender, roles);
+        VoteQuorum voteQuorum = voteQuorumFactory.newVoteQuorum(gov, maxSlateSize);
 
-        // roles.setRootUser(address(multisig), true);
+        roles.setAuthority(voteQuorum);
 
         target.addAuthorization(address(pause.proxy()));
         target.removeAuthorization(address(this));
@@ -107,7 +126,7 @@ contract MultisigIntegration is Test {
         owners.push(address(this));
 
         multisig = new MultiSigWallet(owners, required);
-        roles.setRootUser(address(multisig), true);
+        roles.setOwner(address(multisig));
 
         assertEq(multisig.owners(0), msg.sender);
         assertEq(multisig.owners(1), address(this));
