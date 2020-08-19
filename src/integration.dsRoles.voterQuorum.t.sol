@@ -185,8 +185,8 @@ contract Voting is Test {
         Proposal proposal = new Proposal(pause, usr, codeHash, parameters);
 
         // granting access to the proposal contract is needed in order to for it to succeed
-        // 
-        // roles.setRootUser(address(proposal), true);
+        // this can be done in a more granular way (providing access only to schedule and execute tx)
+        roles.setRootUser(address(proposal), true);
 
         // make proposal the hat
         voter.addVotingWeight(voteQuorum, votes);
