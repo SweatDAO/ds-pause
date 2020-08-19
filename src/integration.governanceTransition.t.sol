@@ -169,7 +169,7 @@ contract SimpleAction {
 
 contract GovernanceTransition is Test {
 
-    function test_1_only_multisig_exists() public {
+    function test_1_governance_transition() public {
 
         // 1. Only multisig rules
         DSRecursiveRoles roles = new DSRecursiveRoles();
@@ -250,7 +250,7 @@ contract GovernanceTransition is Test {
         codeHash = extcodehash(usr);
         parameters = abi.encodeWithSignature("executeTransaction(address,uint256)", target, 42);
 
-        Proposal proposal = new Proposal(pause, usr, codeHash, parameters, 0);
+        Proposal proposal = new Proposal(pause, usr, codeHash, parameters, now + delay);
 
         // make proposal the hat
         voter.addVotingWeight(voteQuorum, votes);
@@ -276,10 +276,46 @@ contract GovernanceTransition is Test {
 
         assertEq(address(roles.owner()), address(0x0)); // effect of proposal execution   
 
-        // 5.1 voteQuorum can still transact 
+        // 5.1 multisig can no longer transact
+        // proposal
+        usr = address(new SimpleAction());
+        codeHash = extcodehash(usr);
+        proposalParameters = abi.encodeWithSignature("executeTransaction(address,uint256)", target, 51);
+        earliestExecutionTime = now + delay;
 
+        // packing proposal for pause
+        parameters = abi.encodeWithSignature("scheduleTransaction(address,bytes32,bytes,uint256)", usr, codeHash, proposalParameters, earliestExecutionTime);        
 
+        // create proposal, automatically executed (only one required approver, see unit tests for tests of quorum)
+        multisig.submitTransaction("First Proposal", address(pause), 0, parameters);
 
+        // execute transaction
+        hevm.warp(earliestExecutionTime);
+        parameters = abi.encodeWithSignature("executeTransaction(address,bytes32,bytes,uint256)", usr, codeHash, proposalParameters, earliestExecutionTime);        
+
+        multisig.submitTransaction("First Proposal", address(pause), 0, parameters);
+        assertEq(target.val(), 42); // no effect
+
+        // 5.2 votingQuorum can still transact
+        usr = address(new SimpleAction());
+        codeHash = extcodehash(usr);
+        parameters = abi.encodeWithSignature("executeTransaction(address,uint256)", target, 52);
+
+        proposal = new Proposal(pause, usr, codeHash, parameters, now + delay);
+
+        // make proposal the hat
+        voter.vote(voteQuorum, address(proposal));
+        voter.electCandidate(voteQuorum, address(proposal));
+
+        // schedule proposal
+        proposal.scheduleTransaction();
+
+        // wait until earliestExecutionTime
+        hevm.warp(proposal.earliestExecutionTime());
+
+        // execute proposal
+        assertEq(target.val(), 42);
+        proposal.executeTransaction();
+        assertEq(target.val(), 52);
     }
-
 }
