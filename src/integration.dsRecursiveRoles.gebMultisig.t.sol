@@ -86,7 +86,6 @@ contract Test is DSTest {
 
         // create gov token
         gov = new DSToken("PROT");
-        // gov.mint(address(voter), votes);
         gov.setOwner(address(0));
 
         // quorum factory
