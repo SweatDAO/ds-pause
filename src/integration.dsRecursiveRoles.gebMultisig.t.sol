@@ -17,10 +17,10 @@ pragma solidity >=0.6.7;
 
 import {DSTest} from "ds-test/test.sol";
 import {DSProxy} from "ds-proxy/proxy.sol";
-import {DSRecursiveRoles} from "ds-roles/recursive_roles.sol";
 import {DSToken} from "ds-token/token.sol";
-import {VoteQuorum, VoteQuorumFactory} from "ds-vote-quorum/VoteQuorum.sol";
+import {DSRecursiveRoles} from "ds-roles/recursive_roles.sol";
 import {MultiSigWallet} from "geb-basic-multisig/MultisigWallet.sol";
+import {VoteQuorum, VoteQuorumFactory} from "ds-vote-quorum/VoteQuorum.sol";
 
 import "./pause.sol";
 
