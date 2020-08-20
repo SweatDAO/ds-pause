@@ -18,7 +18,7 @@ pragma solidity >=0.6.7;
 import {DSTest} from "ds-test/test.sol";
 import {DSAuth, DSAuthority} from "ds-auth/auth.sol";
 
-import {DSPause} from "./pause.sol";
+import {DSPause} from "../pause.sol";
 
 // ------------------------------------------------------------------
 // Test Harness
