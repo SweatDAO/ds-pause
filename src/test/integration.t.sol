@@ -129,7 +129,7 @@ contract Test is DSTest {
 
     // gov constants
     uint votes = 100;
-    uint maxSlateSize = 1;
+    uint maxBallotSize = 1;
 
     // gov token
     DSToken gov;
@@ -173,7 +173,7 @@ contract Integration is Test {
 
         DSRecursiveRoles roles = new DSRecursiveRoles();
         DSPause pause = new DSPause(delay, msg.sender, roles);
-        VoteQuorum voteQuorum = voteQuorumFactory.newVoteQuorum(gov, maxSlateSize);
+        VoteQuorum voteQuorum = voteQuorumFactory.newVoteQuorum(gov, maxBallotSize);
 
         roles.setAuthority(voteQuorum);
 
@@ -219,7 +219,7 @@ contract Integration is Test {
         DSRecursiveRoles roles = new DSRecursiveRoles();
 
         // create gov system
-        VoteQuorum voteQuorum = voteQuorumFactory.newVoteQuorum(gov, maxSlateSize);
+        VoteQuorum voteQuorum = voteQuorumFactory.newVoteQuorum(gov, maxBallotSize);
         DSPause pause = new DSPause(delay, msg.sender, roles);
 
         // adding roles
@@ -289,7 +289,7 @@ contract Integration is Test {
         assertEq(target.val(), 1); 
 
         // 2. voteQuorum created
-        VoteQuorum voteQuorum = voteQuorumFactory.newVoteQuorum(gov, maxSlateSize);
+        VoteQuorum voteQuorum = voteQuorumFactory.newVoteQuorum(gov, maxBallotSize);
 
         // 3. multisig assigns voteQuorum as authority
         usr = address(roles);
@@ -382,7 +382,7 @@ contract Integration is Test {
 
     function test_voteQuorum_direct_integration() public {
         // create gov system
-        VoteQuorum voteQuorum = voteQuorumFactory.newVoteQuorum(gov, maxSlateSize);
+        VoteQuorum voteQuorum = voteQuorumFactory.newVoteQuorum(gov, maxBallotSize);
         DSPause pause = new DSPause(delay, address(0x0), voteQuorum);
         target.addAuthorization(address(pause.proxy()));
         target.removeAuthorization(address(this));
