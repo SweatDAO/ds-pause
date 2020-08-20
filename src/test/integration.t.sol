@@ -412,3 +412,126 @@ contract Integration is Test {
     }
 }
 
+// ------------------------------------------------------------------
+// Test VoteQuorum Upgrades
+// ------------------------------------------------------------------
+
+contract SetAuthority {
+    function set(DSAuth usr, DSAuthority authority) public {
+        usr.setAuthority(authority);
+    }
+}
+
+// Temporary DSAuthority that will give a VoteQuorum authority over a pause only
+// when a prespecified amount of protocol tokens have been locked in the new vote quorum
+contract Guard is DSAuthority {
+    // --- data ---
+    DSPause public pause;
+    VoteQuorum public voteQuorum; // new vote quorum
+    uint public limit; // min locked protocol tokens in new vote quorum
+
+    bool public scheduled = false;
+
+    address public usr;
+    bytes32 public codeHash;
+    bytes   public parameters;
+    uint    public earliestExecutionTime;
+
+    // --- init ---
+
+    constructor(DSPause pause_, VoteQuorum voteQuorum_, uint limit_) public {
+        pause = pause_;
+        voteQuorum = voteQuorum_;
+        limit = limit_;
+
+        usr = address(new SetAuthority());
+        codeHash = extcodehash(usr);
+        parameters = abi.encodeWithSignature("set(address,address)", pause, voteQuorum);
+    }
+
+    // --- auth ---
+
+    function canCall(address src, address dst, bytes4 sig) override public view returns (bool) {
+        require(src == address(this));
+        require(dst == address(pause));
+        require(sig == bytes4(keccak256("scheduleTransaction(address,bytes32,bytes,uint256)")));
+        return true;
+    }
+
+    // --- unlock ---
+
+    function scheduleTransaction() external {
+        require(voteQuorum.PROT().balanceOf(address(voteQuorum)) >= limit);
+        require(!scheduled);
+        scheduled = true;
+
+        earliestExecutionTime = now + pause.delay();
+        pause.scheduleTransaction(usr, codeHash, parameters, earliestExecutionTime);
+    }
+
+    function executeTransaction() external returns (bytes memory) {
+        require(scheduled);
+        return pause.executeTransaction(usr, codeHash, parameters, earliestExecutionTime);
+    }
+
+    // --- util ---
+
+    function extcodehash(address who) internal view returns (bytes32 soul) {
+        assembly { soul := extcodehash(who) }
+    }
+}
+
+
+contract UpgradeVoteQuorum is Test {
+
+    function test_quorum_upgrade() public {
+        // create gov system
+        VoteQuorum oldVoteQuorum = voteQuorumFactory.newVoteQuorum(gov, maxBallotSize);
+        DSPause pause = new DSPause(delay, address(0x0), oldVoteQuorum);
+
+        // make pause the only owner of the target
+        target.addAuthorization(address(pause.proxy()));
+        target.removeAuthorization(address(this));
+
+        // create new quorum
+        VoteQuorum newVoteQuorum = voteQuorumFactory.newVoteQuorum(gov, maxBallotSize);
+
+        // create guard
+        Guard guard = new Guard(pause, newVoteQuorum, votes);
+
+        // create gov proposal to transfer ownership from the old quorum to the guard
+        address      usr = address(new SetAuthority());
+        bytes32      codeHash = extcodehash(usr);
+        bytes memory parameters = abi.encodeWithSignature("set(address,address)", pause, guard);
+
+        Proposal proposal = new Proposal(pause, usr, codeHash, parameters, now + delay);
+
+        // check that the old quorum is the authority
+        assertEq(address(pause.authority()), address(oldVoteQuorum));
+
+        // vote for proposal
+        voter.addVotingWeight(oldVoteQuorum, votes);
+        voter.vote(oldVoteQuorum, address(proposal));
+        voter.electCandidate(oldVoteQuorum, address(proposal));
+
+        // transfer ownership from old quorum to guard
+        proposal.scheduleTransaction();
+        hevm.warp(proposal.earliestExecutionTime());
+        proposal.executeTransaction();
+
+        // check that the guard is the authority
+        assertEq(address(pause.authority()), address(guard));
+
+        // move protocol tokens from old quorum to new quorum
+        voter.removeVotingWeight(oldVoteQuorum, votes);
+        voter.addVotingWeight(newVoteQuorum, votes);
+
+        // plot transaction to transfer ownership from guard to newVoteQuorum
+        guard.scheduleTransaction();
+        hevm.warp(guard.earliestExecutionTime());
+        guard.executeTransaction();
+
+        // check that the new quorum is the authority
+        assertEq(address(pause.authority()), address(newVoteQuorum));
+    }
+}
