@@ -108,6 +108,32 @@ contract Proposal {
 }
 
 // ------------------------------------------------------------------
+// Gov Proposal Template (to abandon a previously created proposal)
+// ------------------------------------------------------------------
+
+contract AbandonTransactionProposal {
+
+    DSPause public pause;
+    address public usr;
+    bytes32 public codeHash;
+    bytes   public parameters;
+    uint    public earliestExecutionTime;
+
+    constructor(DSPause pause_, address usr_, bytes32 codeHash_, bytes memory parameters_, uint earliestExecutionTime_) public {
+        pause = pause_;
+        codeHash = codeHash_;
+        usr = usr_;
+        parameters = parameters_;
+        earliestExecutionTime = earliestExecutionTime_;
+    }
+
+    function abandonTransaction() external {
+        pause.abandonTransaction(usr, codeHash, parameters, earliestExecutionTime);
+    }
+}
+
+
+// ------------------------------------------------------------------
 // Shared Test Setup
 // ------------------------------------------------------------------
 
@@ -235,7 +261,7 @@ contract Integration is Test {
 
         Proposal proposal = new Proposal(pause, usr, codeHash, parameters, now + delay);
 
-        // make proposal the hat
+        // make proposal the votedAuthority 
         voter.addVotingWeight(voteQuorum, votes);
         voter.vote(voteQuorum, address(proposal));
         voter.electCandidate(voteQuorum, address(proposal));
@@ -394,7 +420,7 @@ contract Integration is Test {
 
         Proposal proposal = new Proposal(pause, usr, codeHash, parameters, now + delay);
 
-        // make proposal the hat
+        // make proposal the votedAuthority 
         voter.addVotingWeight(voteQuorum, votes);
         voter.vote(voteQuorum, address(proposal));
         voter.electCandidate(voteQuorum, address(proposal));
@@ -533,5 +559,230 @@ contract UpgradeVoteQuorum is Test {
 
         // check that the new quorum is the authority
         assertEq(address(pause.authority()), address(newVoteQuorum));
+    }
+}
+
+
+contract IntegrationVotingScenarios is DSTest {
+    // test harness
+    Hevm hevm;
+    Target target;
+    MultiSigWallet multisig;
+    VoteQuorumFactory voteQuorumFactory;
+    Voter voter1;
+    Voter voter2;
+    Voter voter3;
+    Proposal proposal1;
+    Proposal proposal2;
+    Proposal proposal3;
+    AbandonTransactionProposal abandonProposal1;
+    VoteQuorum voteQuorum;
+
+    // pause timings
+    uint delay = 1 days;
+
+    // multisig constants
+    address[] owners = [msg.sender];
+    uint required = 1;
+
+    // gov constants
+    uint maxBallotSize = 1;
+
+    // gov token
+    DSToken gov;
+
+    function setUp() public {
+        // init hevm
+        hevm = Hevm(0x7109709ECfa91a80626fF3989D68f67F5b1DD12D);
+        hevm.warp(0);
+
+        // create test harness
+        target = new Target();
+        voter1 = new Voter();
+        voter2 = new Voter();
+        voter3 = new Voter();
+
+        // create gov token
+        gov = new DSToken("PROT");
+        gov.mint(address(voter1), 100);
+        gov.mint(address(voter2), 1000);
+        gov.mint(address(voter3), 1000000000);
+        gov.setOwner(address(0));
+
+        // quorum factory
+        voteQuorumFactory = new VoteQuorumFactory();
+
+        // create gov system
+        voteQuorum = voteQuorumFactory.newVoteQuorum(gov, maxBallotSize);
+        DSPause pause = new DSPause(delay, address(0x0), voteQuorum);
+        target.addAuthorization(address(pause.proxy()));
+        target.removeAuthorization(address(this));
+
+        // create dummy proposals
+        address      usr = address(new SimpleAction());
+        bytes32      codeHash = extcodehash(usr);
+        bytes memory parameters = abi.encodeWithSignature("executeTransaction(address,uint256)", target, 1);
+        proposal1 = new Proposal(pause, usr, codeHash, parameters, now + delay);
+
+        abandonProposal1 = new AbandonTransactionProposal(pause, usr, codeHash, parameters, now + delay);
+
+        usr = address(new SimpleAction());
+        parameters = abi.encodeWithSignature("executeTransaction(address,uint256)", target, 2);
+        proposal2 = new Proposal(pause, usr, codeHash, parameters, now + delay);
+
+        usr = address(new SimpleAction());
+        parameters = abi.encodeWithSignature("executeTransaction(address,uint256)", target, 3);
+        proposal3 = new Proposal(pause, usr, codeHash, parameters, now + delay);
+    }
+
+    function extcodehash(address usr) internal view returns (bytes32 ch) {
+        assembly { ch := extcodehash(usr) }
+    }
+
+    // illustrates the lack of a minimum quorum
+    function test_smallVote() public { 
+
+        // make proposal 1 the votedAuthority 
+        voter1.addVotingWeight(voteQuorum, 1);
+        voter1.vote(voteQuorum, address(proposal1));
+        voter1.electCandidate(voteQuorum, address(proposal1));
+
+        // schedule proposal 1
+        proposal1.scheduleTransaction();
+
+        // wait until earliestExecutionTime
+        hevm.warp(proposal1.earliestExecutionTime());
+
+        // execute proposal 1
+        assertEq(target.val(), 0);
+        proposal1.executeTransaction();
+        assertEq(target.val(), 1);
+    }
+
+    // illustrates how an old proposal can become the voteAuthority
+    // just from users unstaking from the contract (removing weight)
+    function test_pass_older_proposal() public { 
+
+        // make proposal 1 the votedAuthority 
+        voter1.addVotingWeight(voteQuorum, 100);
+        voter1.vote(voteQuorum, address(proposal1));
+        voter1.electCandidate(voteQuorum, address(proposal1));
+
+        // make proposal 2 the votedAuthority 
+        voter2.addVotingWeight(voteQuorum, 200);
+        voter2.vote(voteQuorum, address(proposal2));
+        voter2.electCandidate(voteQuorum, address(proposal2));
+
+        // schedule proposal 2
+        proposal2.scheduleTransaction();
+        hevm.warp(proposal2.earliestExecutionTime());
+
+        // execute proposal 2
+        assertEq(target.val(), 0);
+        proposal2.executeTransaction();
+        assertEq(target.val(), 2);
+
+        // make proposal 1 the votedAuthority  once again
+        voter2.removeVotingWeight(voteQuorum, 200);
+        voter1.electCandidate(voteQuorum, address(proposal1));
+
+        // schedule proposal 1
+        proposal1.scheduleTransaction();
+        hevm.warp(proposal1.earliestExecutionTime());
+
+        // execute proposal 1
+        assertEq(target.val(), 2);
+        proposal1.executeTransaction();
+        assertEq(target.val(), 1);
+    }
+
+    // Illustrates how an atomic transaction and flash loan
+    // could be used to make a proposal votedAuthority and then scheduling it
+    function test_flash_proposal() public {
+
+        // make proposal 1 the votedAuthority 
+        voter1.addVotingWeight(voteQuorum, 100);
+        voter1.vote(voteQuorum, address(proposal1));
+        voter1.electCandidate(voteQuorum, address(proposal1));
+
+        // make proposal 2 the votedAuthority 
+        /// flashloan, voter2 now has the tokens, all actions from now on to be executed atomically
+        voter2.addVotingWeight(voteQuorum, 200);
+        voter2.vote(voteQuorum, address(proposal2));
+        voter2.electCandidate(voteQuorum, address(proposal2));
+        voter2.removeVotingWeight(voteQuorum, 200); // repay the loan
+
+        // schedule proposal 2
+        proposal2.scheduleTransaction();
+        /// end of atomic tx
+
+        hevm.warp(proposal2.earliestExecutionTime());
+
+        // execute proposal 2
+        assertEq(target.val(), 0);
+        proposal2.executeTransaction();
+        assertEq(target.val(), 2);
+    }
+
+    // illustrates how the contract does not check for the majority when setting votedAuthority
+    // it just checks against the current votedAuthority
+    function test_pass_proposal_without_majority() public {
+
+        // make proposal 1 the votedAuthority 
+        voter1.addVotingWeight(voteQuorum, 100);
+        voter1.vote(voteQuorum, address(proposal1));
+        voter1.electCandidate(voteQuorum, address(proposal1));
+
+        // the absolute majority votes on proposal 3, but do not elect it
+        voter3.addVotingWeight(voteQuorum, 1000000000);
+        voter3.vote(voteQuorum, address(proposal3));
+
+        // voter 2 makes the proposal the votingAuthority, even though it does not have the majority of votes.
+        voter2.addVotingWeight(voteQuorum, 200);
+        voter2.vote(voteQuorum, address(proposal2));
+        voter2.electCandidate(voteQuorum, address(proposal2));
+
+        // schedule proposal 2
+        proposal2.scheduleTransaction();
+        hevm.warp(proposal2.earliestExecutionTime());
+
+        // execute proposal 2
+        assertEq(target.val(), 0);
+        proposal2.executeTransaction();
+        assertEq(target.val(), 2);
+    }
+
+    // test to abandon a transaction that has already been scheduled in Pause
+    // Requires governance to vote in a specific proposal to achieve this
+    function test_abandonTransaction() public {
+
+        // make proposal 1 the votedAuthority 
+        voter1.addVotingWeight(voteQuorum, 100);
+        voter1.vote(voteQuorum, address(proposal1));
+        voter1.electCandidate(voteQuorum, address(proposal1));
+
+        // schedule proposal 1
+        proposal1.scheduleTransaction();
+        
+        // the community decides to abandon the TX, 
+        // setting the votedAuthority to a proposal that abandons the previous
+        voter2.addVotingWeight(voteQuorum, 200);
+        voter2.vote(voteQuorum, address(abandonProposal1));
+        voter2.electCandidate(voteQuorum, address(abandonProposal1));
+
+        // execute the proposal that abandons Proposal 1
+        abandonProposal1.abandonTransaction();
+        
+        // wait until earliestExecutionTime
+        hevm.warp(proposal1.earliestExecutionTime());
+
+        // execute proposal 1
+        assertEq(target.val(), 0);
+
+        try proposal1.executeTransaction() {
+            fail(); // fail test if proposal succeeds
+        } catch {}
+
+        assertEq(target.val(), 0); // no effect
     }
 }
