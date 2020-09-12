@@ -288,7 +288,7 @@ contract Exec is Test {
         pause.executeTransaction(usr, codeHash, parameters, eta);
     }
 
-    function test_suceeds_when_delay_passed() public {
+    function test_succeeds_when_delay_passed() public {
         address      usr = target;
         bytes32      codeHash = extcodehash(usr);
         bytes memory parameters = abi.encodeWithSignature("get()");
@@ -301,7 +301,7 @@ contract Exec is Test {
         assertEq(b32(out), bytes32("Hello"));
     }
 
-    function test_suceeds_when_called_from_unauthorized() public {
+    function test_succeeds_when_called_from_unauthorized() public {
         address      usr = target;
         bytes32      codeHash = extcodehash(usr);
         bytes memory parameters = abi.encodeWithSignature("get()");
@@ -314,7 +314,7 @@ contract Exec is Test {
         assertEq(b32(out), bytes32("Hello"));
     }
 
-    function test_suceeds_when_called_from_authorized() public {
+    function test_succeeds_when_called_from_authorized() public {
         address      usr = target;
         bytes32      codeHash = extcodehash(usr);
         bytes memory parameters = abi.encodeWithSignature("get()");
