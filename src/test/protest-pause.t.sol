@@ -46,8 +46,8 @@ contract Stranger {
     function abandonTransaction(DSProtestPause pause, address usr, bytes32 codeHash, bytes memory parameters, uint eta) public {
         pause.abandonTransaction(usr, codeHash, parameters, eta);
     }
-    function protestAgainstTransaction(DSProtestPause pause, address usr, bytes32 codeHash, bytes memory parameters, uint eta) public {
-        pause.protestAgainstTransaction(usr, codeHash, parameters, eta);
+    function protestAgainstTransaction(DSProtestPause pause, address usr, bytes32 codeHash, bytes memory parameters) public {
+        pause.protestAgainstTransaction(usr, codeHash, parameters);
     }
     function executeTransaction(DSProtestPause pause, address usr, bytes32 codeHash, bytes memory parameters, uint eta)
         public returns (bytes memory)

@@ -165,7 +165,7 @@ contract DSProtestPause is DSAuth, DSNote {
         require(transactionDelays[partiallyHashedTx].scheduleTime > 0, "ds-protest-pause-cannot-attach-for-null");
         emit AttachTransactionDescription(msg.sender, usr, codeHash, parameters, earliestExecutionTime, description);
     }
-    function protestAgainstTransaction(address usr, bytes32 codeHash, bytes memory parameters, uint earliestExecutionTime)
+    function protestAgainstTransaction(address usr, bytes32 codeHash, bytes memory parameters)
         public
     {
         require(msg.sender == protester, "ds-protest-pause-sender-not-protester");
