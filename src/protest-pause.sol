@@ -112,12 +112,22 @@ contract DSProtestPause is DSAuth, DSNote {
     {
         return keccak256(abi.encode(usr, codeHash, parameters));
     }
-
     function getExtCodeHash(address usr)
         internal view
         returns (bytes32 codeHash)
     {
         assembly { codeHash := extcodehash(usr) }
+    }
+    function protestWindowAvailable(address usr, bytes32 codeHash, bytes calldata parameters) external view returns (bool) {
+        bytes32 partiallyHashedTx = getTransactionDataHash(usr, codeHash, parameters);
+        return (
+          now < addition(transactionDelays[partiallyHashedTx].scheduleTime, (multiply(transactionDelays[partiallyHashedTx].totalDelay, protestDeadline) / 1000))
+        );
+    }
+    function protestWindowAvailable(bytes32 txHash) external view returns (bool) {
+        return (
+          now < addition(transactionDelays[txHash].scheduleTime, (multiply(transactionDelays[txHash].totalDelay, protestDeadline) / 1000))
+        );
     }
 
     // --- Operations ---
