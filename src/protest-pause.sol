@@ -61,7 +61,7 @@ contract DSProtestPause is DSAuth, DSNote {
     uint             public protesterLifetime;
 
     uint256 constant public maxScheduledTransactions = 10;
-    uint256 constant public protestDeadline          = 500;                 // a tx can be protested against if max 1/2 of the time until earliest execution has passed
+    uint256 constant public protestEnd               = 500;                 // a tx can be protested against if max 1/2 of the time until earliest execution has passed
     uint256 constant public MAX_DELAY_MULTIPLIER     = 3;
     bytes32 constant public DS_PAUSE_TYPE            = bytes32("PROTEST");
 
@@ -76,7 +76,7 @@ contract DSProtestPause is DSAuth, DSNote {
 
     // --- Init ---
     constructor(uint protesterLifetime_, uint delay_, address owner_, DSAuthority authority_) public {
-        require(both(protestDeadline > 0, protestDeadline < 1000), "ds-protest-pause-invalid-protest-deadline");
+        require(both(protestEnd > 0, protestEnd < 1000), "ds-protest-pause-invalid-protest-deadline");
         delay = delay_;
         owner = owner_;
         authority = authority_;
@@ -123,14 +123,36 @@ contract DSProtestPause is DSAuth, DSNote {
     }
     function protestWindowAvailable(address usr, bytes32 codeHash, bytes calldata parameters) external view returns (bool) {
         bytes32 partiallyHashedTx = getTransactionDataHash(usr, codeHash, parameters);
+        (bool protested, ,) = getTransactionDelays(partiallyHashedTx);
+        if (protested) return false;
         return (
-          now < addition(transactionDelays[partiallyHashedTx].scheduleTime, (multiply(transactionDelays[partiallyHashedTx].totalDelay, protestDeadline) / 1000))
+          now < protestDeadline(partiallyHashedTx)
         );
     }
     function protestWindowAvailable(bytes32 txHash) external view returns (bool) {
+        (bool protested, ,) = getTransactionDelays(txHash);
+        if (protested) return false;
         return (
-          now < addition(transactionDelays[txHash].scheduleTime, (multiply(transactionDelays[txHash].totalDelay, protestDeadline) / 1000))
+          now < protestDeadline(txHash)
         );
+    }
+    function timeUntilProposalProtestDeadline(address usr, bytes32 codeHash, bytes calldata parameters) external view returns (uint256) {
+        bytes32 partiallyHashedTx = getTransactionDataHash(usr, codeHash, parameters);
+        (bool protested, ,) = getTransactionDelays(partiallyHashedTx);
+        if (protested) return 0;
+        uint protestDeadline = protestDeadline(partiallyHashedTx);
+        if (now >= protestDeadline) return 0;
+        return subtract(protestDeadline, now);
+    }
+    function timeUntilProposalProtestDeadline(bytes32 txHash) external view returns (uint256) {
+        (bool protested, ,) = getTransactionDelays(txHash);
+        if (protested) return 0;
+        uint protestDeadline = protestDeadline(txHash);
+        if (now >= protestDeadline) return 0;
+        return subtract(protestDeadline, now);
+    }
+    function protestDeadline(bytes32 txHash) internal view returns (uint256) {
+        return addition(transactionDelays[txHash].scheduleTime, (multiply(transactionDelays[txHash].totalDelay, protestEnd) / 1000));
     }
 
     // --- Operations ---
@@ -161,7 +183,7 @@ contract DSProtestPause is DSAuth, DSNote {
         require(transactionDelays[partiallyHashedTx].scheduleTime > 0, "ds-protest-pause-null-inexistent-transaction");
         require(!transactionDelays[partiallyHashedTx].protested, "ds-protest-pause-tx-already-protested");
         require(
-          now < addition(transactionDelays[partiallyHashedTx].scheduleTime, (multiply(transactionDelays[partiallyHashedTx].totalDelay, protestDeadline) / 1000)),
+          now < protestDeadline(partiallyHashedTx),
           "ds-protest-pause-exceed-protest-deadline"
         );
 
@@ -219,7 +241,7 @@ contract DSProtestPause is DSAuth, DSNote {
     }
 
     // --- Getters ---
-    function getTransactionDelays(address usr, bytes32 codeHash, bytes calldata parameters, uint earliestExecutionTime) external view returns (bool, uint256, uint256) {
+    function getTransactionDelays(address usr, bytes32 codeHash, bytes memory parameters, uint earliestExecutionTime) public view returns (bool, uint256, uint256) {
         bytes32 hashedTx = getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime);
         return (
           transactionDelays[hashedTx].protested,
@@ -227,7 +249,7 @@ contract DSProtestPause is DSAuth, DSNote {
           transactionDelays[hashedTx].totalDelay
         );
     }
-    function getTransactionDelays(bytes32 txHash) external view returns (bool, uint256, uint256) {
+    function getTransactionDelays(bytes32 txHash) public view returns (bool, uint256, uint256) {
         return (
           transactionDelays[txHash].protested,
           transactionDelays[txHash].scheduleTime,
