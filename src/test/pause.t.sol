@@ -208,7 +208,7 @@ contract Admin is Test {
     }
 }
 
-contract Plot is Test {
+contract Schedule is Test {
 
     function testFail_call_from_unauthorized() public {
         address      usr = target;
@@ -219,7 +219,7 @@ contract Plot is Test {
         stranger.scheduleTransaction(pause, usr, codeHash, parameters, eta);
     }
 
-    function testFail_plot_eta_too_soon() public {
+    function testFail_schedule_eta_too_soon() public {
         address      usr = target;
         bytes32      codeHash = extcodehash(usr);
         bytes memory parameters = abi.encodeWithSignature("get()");
@@ -228,7 +228,7 @@ contract Plot is Test {
         pause.scheduleTransaction(usr, codeHash, parameters, eta);
     }
 
-    function test_plot_populates_scheduled_transactions_mapping() public {
+    function test_schedule_populates_scheduled_transactions_mapping() public {
         address      usr = target;
         bytes32      codeHash = extcodehash(usr);
         bytes memory parameters = abi.encodeWithSignature("get()");
@@ -242,7 +242,7 @@ contract Plot is Test {
 
 }
 
-contract Exec is Test {
+contract Execute is Test {
 
     function testFail_delay_not_passed() public {
         address      usr = target;
@@ -329,7 +329,7 @@ contract Exec is Test {
 
 }
 
-contract Drop is Test {
+contract AbandonTransaction is Test {
 
     function testFail_call_from_unauthorized() public {
         address      usr = target;
@@ -343,7 +343,7 @@ contract Drop is Test {
         stranger.abandonTransaction(pause, usr, codeHash, parameters, eta);
     }
 
-    function test_drop_plotted_plan() public {
+    function test_abandon_scheduled_tx() public {
         address      usr = target;
         bytes32      codeHash = extcodehash(usr);
         bytes memory parameters = abi.encodeWithSignature("get()");

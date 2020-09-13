@@ -360,3 +360,34 @@ contract Drop is Test {
     }
 
 }
+
+contract AbandonTransaction is Test {
+
+    function testFail_call_from_unauthorized() public {
+        address      usr = target;
+        bytes32      codeHash = extcodehash(usr);
+        bytes memory parameters = abi.encodeWithSignature("get()");
+        uint         eta = now + pause.delay();
+
+        pause.scheduleTransaction(usr, codeHash, parameters, eta);
+        hevm.warp(eta);
+
+        stranger.abandonTransaction(pause, usr, codeHash, parameters, eta);
+    }
+
+    function test_abandon_scheduled_tx() public {
+        address      usr = target;
+        bytes32      codeHash = extcodehash(usr);
+        bytes memory parameters = abi.encodeWithSignature("get()");
+        uint         eta = now + pause.delay();
+
+        pause.scheduleTransaction(usr, codeHash, parameters, eta);
+
+        hevm.warp(eta);
+        pause.abandonTransaction(usr, codeHash, parameters, eta);
+
+        bytes32 id = keccak256(abi.encode(usr, codeHash, parameters, eta));
+        assertTrue(!pause.scheduledTransactions(id));
+    }
+
+}

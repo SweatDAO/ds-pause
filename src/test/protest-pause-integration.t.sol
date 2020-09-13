@@ -22,7 +22,7 @@ import {DSDelegateRoles} from "ds-roles/delegate_roles.sol";
 import {MultiSigWallet} from "geb-basic-multisig/MultisigWallet.sol";
 import {VoteQuorum, VoteQuorumFactory} from "ds-vote-quorum/VoteQuorum.sol";
 
-import "../pause.sol";
+import "../protest-pause.sol";
 
 // ------------------------------------------------------------------
 // Test Harness
@@ -79,13 +79,13 @@ contract Voter {
 contract Proposal {
     bool public plotted  = false;
 
-    DSPause public pause;
+    DSProtestPause public pause;
     address public usr;
     bytes32 public codeHash;
     bytes   public parameters;
     uint    public earliestExecutionTime;
 
-    constructor(DSPause pause_, address usr_, bytes32 codeHash_, bytes memory parameters_, uint earliestExecutionTime_) public {
+    constructor(DSProtestPause pause_, address usr_, bytes32 codeHash_, bytes memory parameters_, uint earliestExecutionTime_) public {
         pause = pause_;
         codeHash = codeHash_;
         usr = usr_;
@@ -113,13 +113,13 @@ contract Proposal {
 
 contract AbandonTransactionProposal {
 
-    DSPause public pause;
+    DSProtestPause public pause;
     address public usr;
     bytes32 public codeHash;
     bytes   public parameters;
     uint    public earliestExecutionTime;
 
-    constructor(DSPause pause_, address usr_, bytes32 codeHash_, bytes memory parameters_, uint earliestExecutionTime_) public {
+    constructor(DSProtestPause pause_, address usr_, bytes32 codeHash_, bytes memory parameters_, uint earliestExecutionTime_) public {
         pause = pause_;
         codeHash = codeHash_;
         usr = usr_;
@@ -198,7 +198,7 @@ contract Integration is Test {
     function test_multisig_dsRecursiveRoles_integration() public {
 
         DSDelegateRoles roles = new DSDelegateRoles();
-        DSPause pause = new DSPause(delay, msg.sender, roles);
+        DSProtestPause pause = new DSProtestPause(delay, msg.sender, roles);
         VoteQuorum voteQuorum = voteQuorumFactory.newVoteQuorum(gov, maxBallotSize);
 
         roles.setAuthority(voteQuorum);
@@ -226,14 +226,14 @@ contract Integration is Test {
 
 
         // packing proposal for pause
-        bytes memory parameters = abi.encodeWithSignature("scheduleTransaction(address,bytes32,bytes,uint256)", usr, codeHash, proposalParameters, earliestExecutionTime);        
+        bytes memory parameters = abi.encodeWithSignature("scheduleTransaction(address,bytes32,bytes,uint256)", usr, codeHash, proposalParameters, earliestExecutionTime);
 
         // create proposal, automatically executed (only one required approver, see unit tests for tests of quorum)
         multisig.submitTransaction("metadata", address(pause), 0, parameters);
 
         // execute transaction
         hevm.warp(earliestExecutionTime);
-        parameters = abi.encodeWithSignature("executeTransaction(address,bytes32,bytes,uint256)", usr, codeHash, proposalParameters, earliestExecutionTime);        
+        parameters = abi.encodeWithSignature("executeTransaction(address,bytes32,bytes,uint256)", usr, codeHash, proposalParameters, earliestExecutionTime);
 
         multisig.submitTransaction("metadata", address(pause), 0, parameters);
         assertEq(target.val(), 1); // effect of proposal execution
@@ -246,7 +246,7 @@ contract Integration is Test {
 
         // create gov system
         VoteQuorum voteQuorum = voteQuorumFactory.newVoteQuorum(gov, maxBallotSize);
-        DSPause pause = new DSPause(delay, msg.sender, roles);
+        DSProtestPause pause = new DSProtestPause(delay, msg.sender, roles);
 
         // adding roles
         roles.setAuthority(voteQuorum);
@@ -261,7 +261,7 @@ contract Integration is Test {
 
         Proposal proposal = new Proposal(pause, usr, codeHash, parameters, now + delay);
 
-        // make proposal the votedAuthority 
+        // make proposal the votedAuthority
         voter.addVotingWeight(voteQuorum, votes);
         voter.vote(voteQuorum, address(proposal));
         voter.electCandidate(voteQuorum, address(proposal));
@@ -282,8 +282,8 @@ contract Integration is Test {
 
         // 1. Only multisig rules
         DSDelegateRoles roles = new DSDelegateRoles();
-        DSPause pause = new DSPause(delay, msg.sender, roles);
-        
+        DSProtestPause pause = new DSProtestPause(delay, msg.sender, roles);
+
         target.addAuthorization(address(pause.proxy()));
         target.removeAuthorization(address(this));
 
@@ -304,15 +304,15 @@ contract Integration is Test {
         bytes memory proposalParameters = abi.encodeWithSignature("executeTransaction(address,uint256)", target, 1);
         uint earliestExecutionTime = now + delay;
 
-        bytes memory parameters = abi.encodeWithSignature("scheduleTransaction(address,bytes32,bytes,uint256)", usr, codeHash, proposalParameters, earliestExecutionTime);        
+        bytes memory parameters = abi.encodeWithSignature("scheduleTransaction(address,bytes32,bytes,uint256)", usr, codeHash, proposalParameters, earliestExecutionTime);
 
         multisig.submitTransaction("First Proposal", address(pause), 0, parameters);
 
         hevm.warp(earliestExecutionTime);
-        parameters = abi.encodeWithSignature("executeTransaction(address,bytes32,bytes,uint256)", usr, codeHash, proposalParameters, earliestExecutionTime);        
+        parameters = abi.encodeWithSignature("executeTransaction(address,bytes32,bytes,uint256)", usr, codeHash, proposalParameters, earliestExecutionTime);
 
         multisig.submitTransaction("First Proposal", address(pause), 0, parameters);
-        assertEq(target.val(), 1); 
+        assertEq(target.val(), 1);
 
         // 2. voteQuorum created
         VoteQuorum voteQuorum = voteQuorumFactory.newVoteQuorum(gov, maxBallotSize);
@@ -323,7 +323,7 @@ contract Integration is Test {
         proposalParameters = abi.encodeWithSignature("setAuthority(address)", address(voteQuorum));
         multisig.submitTransaction("Adding votingQuorum as authority", usr, 0, proposalParameters);
 
-        assertEq(address(roles.authority()), address(voteQuorum)); 
+        assertEq(address(roles.authority()), address(voteQuorum));
 
         // 4. both can transact
         // 4.1 multisig transacts through pause
@@ -333,12 +333,12 @@ contract Integration is Test {
         proposalParameters = abi.encodeWithSignature("executeTransaction(address,uint256)", target, 41);
         earliestExecutionTime = now + delay;
 
-        parameters = abi.encodeWithSignature("scheduleTransaction(address,bytes32,bytes,uint256)", usr, codeHash, proposalParameters, earliestExecutionTime);        
+        parameters = abi.encodeWithSignature("scheduleTransaction(address,bytes32,bytes,uint256)", usr, codeHash, proposalParameters, earliestExecutionTime);
 
         multisig.submitTransaction("First Proposal", address(pause), 0, parameters);
 
         hevm.warp(earliestExecutionTime);
-        parameters = abi.encodeWithSignature("executeTransaction(address,bytes32,bytes,uint256)", usr, codeHash, proposalParameters, earliestExecutionTime);        
+        parameters = abi.encodeWithSignature("executeTransaction(address,bytes32,bytes,uint256)", usr, codeHash, proposalParameters, earliestExecutionTime);
 
         multisig.submitTransaction("First Proposal", address(pause), 0, parameters);
         assertEq(target.val(), 41);
@@ -369,7 +369,7 @@ contract Integration is Test {
         proposalParameters = abi.encodeWithSignature("setOwner(address)", address(0x0));
         multisig.submitTransaction("Revoking governance ownership", usr, 0, proposalParameters);
 
-        assertEq(address(roles.owner()), address(0x0)); 
+        assertEq(address(roles.owner()), address(0x0));
 
         // 5.1 multisig can no longer transact
         usr = address(new SimpleAction());
@@ -377,12 +377,12 @@ contract Integration is Test {
         proposalParameters = abi.encodeWithSignature("executeTransaction(address,uint256)", target, 51);
         earliestExecutionTime = now + delay;
 
-        parameters = abi.encodeWithSignature("scheduleTransaction(address,bytes32,bytes,uint256)", usr, codeHash, proposalParameters, earliestExecutionTime);        
+        parameters = abi.encodeWithSignature("scheduleTransaction(address,bytes32,bytes,uint256)", usr, codeHash, proposalParameters, earliestExecutionTime);
 
         multisig.submitTransaction("First Proposal", address(pause), 0, parameters);
 
         hevm.warp(earliestExecutionTime);
-        parameters = abi.encodeWithSignature("executeTransaction(address,bytes32,bytes,uint256)", usr, codeHash, proposalParameters, earliestExecutionTime);        
+        parameters = abi.encodeWithSignature("executeTransaction(address,bytes32,bytes,uint256)", usr, codeHash, proposalParameters, earliestExecutionTime);
 
         multisig.submitTransaction("First Proposal", address(pause), 0, parameters);
         assertEq(target.val(), 42); // no effect
@@ -409,7 +409,7 @@ contract Integration is Test {
     function test_voteQuorum_direct_integration() public {
         // create gov system
         VoteQuorum voteQuorum = voteQuorumFactory.newVoteQuorum(gov, maxBallotSize);
-        DSPause pause = new DSPause(delay, address(0x0), voteQuorum);
+        DSProtestPause pause = new DSProtestPause(delay, address(0x0), voteQuorum);
         target.addAuthorization(address(pause.proxy()));
         target.removeAuthorization(address(this));
 
@@ -420,7 +420,7 @@ contract Integration is Test {
 
         Proposal proposal = new Proposal(pause, usr, codeHash, parameters, now + delay);
 
-        // make proposal the votedAuthority 
+        // make proposal the votedAuthority
         voter.addVotingWeight(voteQuorum, votes);
         voter.vote(voteQuorum, address(proposal));
         voter.electCandidate(voteQuorum, address(proposal));
@@ -452,7 +452,7 @@ contract SetAuthority {
 // when a prespecified amount of protocol tokens have been locked in the new vote quorum
 contract Guard is DSAuthority {
     // --- data ---
-    DSPause public pause;
+    DSProtestPause public pause;
     VoteQuorum public voteQuorum; // new vote quorum
     uint public limit; // min locked protocol tokens in new vote quorum
 
@@ -465,7 +465,7 @@ contract Guard is DSAuthority {
 
     // --- init ---
 
-    constructor(DSPause pause_, VoteQuorum voteQuorum_, uint limit_) public {
+    constructor(DSProtestPause pause_, VoteQuorum voteQuorum_, uint limit_) public {
         pause = pause_;
         voteQuorum = voteQuorum_;
         limit = limit_;
@@ -513,7 +513,7 @@ contract UpgradeVoteQuorum is Test {
     function test_quorum_upgrade() public {
         // create gov system
         VoteQuorum oldVoteQuorum = voteQuorumFactory.newVoteQuorum(gov, maxBallotSize);
-        DSPause pause = new DSPause(delay, address(0x0), oldVoteQuorum);
+        DSProtestPause pause = new DSProtestPause(delay, address(0x0), oldVoteQuorum);
 
         // make pause the only owner of the target
         target.addAuthorization(address(pause.proxy()));
@@ -614,7 +614,7 @@ contract IntegrationVotingScenarios is DSTest {
 
         // create gov system
         voteQuorum = voteQuorumFactory.newVoteQuorum(gov, maxBallotSize);
-        DSPause pause = new DSPause(delay, address(0x0), voteQuorum);
+        DSProtestPause pause = new DSProtestPause(delay, address(0x0), voteQuorum);
         target.addAuthorization(address(pause.proxy()));
         target.removeAuthorization(address(this));
 
@@ -640,9 +640,9 @@ contract IntegrationVotingScenarios is DSTest {
     }
 
     // illustrates the lack of a minimum quorum
-    function test_smallVote() public { 
+    function test_smallVote() public {
 
-        // make proposal 1 the votedAuthority 
+        // make proposal 1 the votedAuthority
         voter1.addVotingWeight(voteQuorum, 1);
         voter1.vote(voteQuorum, address(proposal1));
         voter1.electCandidate(voteQuorum, address(proposal1));
@@ -661,14 +661,14 @@ contract IntegrationVotingScenarios is DSTest {
 
     // illustrates how an old proposal can become the voteAuthority
     // just from users unstaking from the contract (removing weight)
-    function test_pass_older_proposal() public { 
+    function test_pass_older_proposal() public {
 
-        // make proposal 1 the votedAuthority 
+        // make proposal 1 the votedAuthority
         voter1.addVotingWeight(voteQuorum, 100);
         voter1.vote(voteQuorum, address(proposal1));
         voter1.electCandidate(voteQuorum, address(proposal1));
 
-        // make proposal 2 the votedAuthority 
+        // make proposal 2 the votedAuthority
         voter2.addVotingWeight(voteQuorum, 200);
         voter2.vote(voteQuorum, address(proposal2));
         voter2.electCandidate(voteQuorum, address(proposal2));
@@ -700,12 +700,12 @@ contract IntegrationVotingScenarios is DSTest {
     // could be used to make a proposal votedAuthority and then scheduling it
     function test_flash_proposal() public {
 
-        // make proposal 1 the votedAuthority 
+        // make proposal 1 the votedAuthority
         voter1.addVotingWeight(voteQuorum, 100);
         voter1.vote(voteQuorum, address(proposal1));
         voter1.electCandidate(voteQuorum, address(proposal1));
 
-        // make proposal 2 the votedAuthority 
+        // make proposal 2 the votedAuthority
         /// flashloan, voter2 now has the tokens, all actions from now on to be executed atomically
         voter2.addVotingWeight(voteQuorum, 200);
         voter2.vote(voteQuorum, address(proposal2));
@@ -728,7 +728,7 @@ contract IntegrationVotingScenarios is DSTest {
     // it just checks against the current votedAuthority
     function test_pass_proposal_without_majority() public {
 
-        // make proposal 1 the votedAuthority 
+        // make proposal 1 the votedAuthority
         voter1.addVotingWeight(voteQuorum, 100);
         voter1.vote(voteQuorum, address(proposal1));
         voter1.electCandidate(voteQuorum, address(proposal1));
@@ -756,15 +756,15 @@ contract IntegrationVotingScenarios is DSTest {
     // Requires governance to vote in a specific proposal to achieve this
     function test_abandonTransaction() public {
 
-        // make proposal 1 the votedAuthority 
+        // make proposal 1 the votedAuthority
         voter1.addVotingWeight(voteQuorum, 100);
         voter1.vote(voteQuorum, address(proposal1));
         voter1.electCandidate(voteQuorum, address(proposal1));
 
         // schedule proposal 1
         proposal1.scheduleTransaction();
-        
-        // the community decides to abandon the TX, 
+
+        // the community decides to abandon the TX,
         // setting the votedAuthority to a proposal that abandons the previous
         voter2.addVotingWeight(voteQuorum, 200);
         voter2.vote(voteQuorum, address(abandonProposal1));
@@ -772,7 +772,7 @@ contract IntegrationVotingScenarios is DSTest {
 
         // execute the proposal that abandons Proposal 1
         abandonProposal1.abandonTransaction();
-        
+
         // wait until earliestExecutionTime
         hevm.warp(proposal1.earliestExecutionTime());
 
