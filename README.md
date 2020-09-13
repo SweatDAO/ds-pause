@@ -33,6 +33,14 @@ to security@reflexer.finance.
 - A `scheduledTransaction` can only be plotted if its `earliestExecutionTime` is after `block.timestamp + delay`
 - A `scheduledTransaction` can only be plotted by authorized users
 
+**`attachTransactionDescription`**
+- A `attachTransactionDescription` can only be called by the authority
+
+**`protestAgainstTransaction`**
+- A `protestAgainstTransaction` can only be called once per scheduled transaction
+- A `protestAgainstTransaction` cannot delay an unscheduled transaction
+- A `protestAgainstTransaction` cannot delay a transaction more than `delay * MAX_MULTIPLIER` (unless it's not already delayed more than that)
+
 **`executeTransaction`**
 - A `scheduledTransaction` can only be executed if it has previously been plotted
 - A `scheduledTransaction` can only be executed once it's `earliestExecutionTime` has passed
@@ -52,9 +60,9 @@ uint delay            = 2 days;
 address owner         = address(0);
 DSAuthority authority = new DSAuthority();
 
-DSPause pause = new DSPause(delay, owner, authority);
+DSPause pause = new DSPause(delay, owner, authority); OR DSProtestPause pause = new DSProtestPause(delay, owner, authority);
 
-// plot the scheduledTransaction
+// schedule the transaction
 
 address      usr = address(0x0);
 bytes32      codeHash;  assembly { codeHash := extcodehash(usr) }
@@ -73,5 +81,7 @@ bytes memory out = pause.executeTransaction(usr, codeHash, parameters, earliestE
 
 ## Tests
 
-- [`pause.t.sol`](./pause.t.sol): unit tests
-- [`integration.t.sol`](./integration.t.sol): usage examples / integation tests
+- [`pause.t.sol`](./pause.t.sol): unit tests for vanilla DSPause
+- [`protest-pause.t.sol`](./protest-pause.t.sol): unit tests for DSProtestPause
+- [`integration.t.sol`](./integration.t.sol): usage examples / integation tests for vanilla DSPause
+- [`protest-pause-integration.t.sol`](./protest-pause.t.sol): usage examples / integation tests for DSProtestPause
