@@ -18,7 +18,7 @@ pragma solidity >=0.6.7;
 import {DSTest} from "ds-test/test.sol";
 import {DSProxy} from "ds-proxy/proxy.sol";
 import {DSToken} from "ds-token/token.sol";
-import {DSRecursiveRoles} from "ds-roles/recursive_roles.sol";
+import {DSDelegateRoles} from "ds-roles/delegate_roles.sol";
 import {MultiSigWallet} from "geb-basic-multisig/MultisigWallet.sol";
 import {VoteQuorum, VoteQuorumFactory} from "ds-vote-quorum/VoteQuorum.sol";
 
@@ -171,7 +171,7 @@ contract Integration is Test {
 
     function test_multisig_dsRecursiveRoles_integration() public {
 
-        DSRecursiveRoles roles = new DSRecursiveRoles();
+        DSDelegateRoles roles = new DSDelegateRoles();
         DSPause pause = new DSPause(delay, msg.sender, roles);
         VoteQuorum voteQuorum = voteQuorumFactory.newVoteQuorum(gov, maxBallotSize);
 
@@ -215,8 +215,8 @@ contract Integration is Test {
 
     function test_voteQuorum_dsRecursiveRoles_integration() public {
 
-        // DSRecursiveRoles
-        DSRecursiveRoles roles = new DSRecursiveRoles();
+        // DSDelegateRoles
+        DSDelegateRoles roles = new DSDelegateRoles();
 
         // create gov system
         VoteQuorum voteQuorum = voteQuorumFactory.newVoteQuorum(gov, maxBallotSize);
@@ -255,7 +255,7 @@ contract Integration is Test {
     function test_governance_transition() public {
 
         // 1. Only multisig rules
-        DSRecursiveRoles roles = new DSRecursiveRoles();
+        DSDelegateRoles roles = new DSDelegateRoles();
         DSPause pause = new DSPause(delay, msg.sender, roles);
         
         target.addAuthorization(address(pause.proxy()));

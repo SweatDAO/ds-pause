@@ -40,12 +40,6 @@ contract DSProtestPause is DSAuth, DSNote {
         emit ChangeDelayMultiplier(multiplier_);
     }
 
-    // --- math ---
-    function addition(uint x, uint y) internal pure returns (uint z) {
-        z = x + y;
-        require(z >= x, "ds-protest-pause-add-overflow");
-    }
-
     // --- Structs ---
     struct TransactionDelay {
         bool protested;
@@ -69,7 +63,9 @@ contract DSProtestPause is DSAuth, DSNote {
     event ChangeDelayMultiplier(uint256 multiplier);
     event ScheduleTransaction(address sender, address usr, bytes32 codeHash, bytes parameters, uint earliestExecutionTime);
     event AbandonTransaction(address sender, address usr, bytes32 codeHash, bytes parameters, uint earliestExecutionTime);
+    event ProtestAgainstTransaction(address sender, address usr, bytes32 codeHash, bytes parameters, uint totalDelay);
     event ExecuteTransaction(address sender, address usr, bytes32 codeHash, bytes parameters, uint earliestExecutionTime);
+    event AttachTransactionDescription(address sender, address usr, bytes32 codeHash, bytes parameters, uint earliestExecutionTime, string description);
 
     // --- Init ---
     constructor(uint delay_, address owner_, DSAuthority authority_) public {
@@ -77,6 +73,18 @@ contract DSProtestPause is DSAuth, DSNote {
         owner = owner_;
         authority = authority_;
         proxy = new DSPauseProxy();
+    }
+
+    // --- Math ---
+    function addition(uint x, uint y) internal pure returns (uint z) {
+        z = x + y;
+        require(z >= x, "ds-protest-pause-add-overflow");
+    }
+    function subtract(uint x, uint y) internal pure returns (uint z) {
+        require((z = x - y) <= x, "ds-protest-pause-sub-underflow");
+    }
+    function multiply(uint x, uint y) internal pure returns (uint z) {
+        require(y == 0 || (z = x * y) / y == x, "ds-protest-pause-mul-invalid");
     }
 
     // --- Boolean Logic ---
@@ -115,6 +123,21 @@ contract DSProtestPause is DSAuth, DSNote {
         transactionDelays[getTransactionDataHash(usr, codeHash, parameters)] = TransactionDelay(false, now, subtract(earliestExecutionTime, now));
         emit ScheduleTransaction(msg.sender, usr, codeHash, parameters, earliestExecutionTime);
     }
+    function scheduleTransaction(address usr, bytes32 codeHash, bytes memory parameters, uint earliestExecutionTime, string memory description)
+        public auth
+    {
+        require(earliestExecutionTime >= addition(now, delay), "ds-protest-pause-delay-not-respected");
+        require(transactionDelays[getTransactionDataHash(usr, codeHash, parameters)].scheduleTime == 0, "ds-protest-pause-cannot-schedule-same-tx-twice");
+        scheduledTransactions[getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime)] = true;
+        transactionDelays[getTransactionDataHash(usr, codeHash, parameters)] = TransactionDelay(false, now, subtract(earliestExecutionTime, now));
+        emit ScheduleTransaction(msg.sender, usr, codeHash, parameters, earliestExecutionTime);
+        emit AttachTransactionDescription(msg.sender, usr, codeHash, parameters, earliestExecutionTime, description);
+    }
+    function attachTransactionDescription(address usr, bytes32 codeHash, bytes memory parameters, uint earliestExecutionTime, string memory description)
+        public auth
+    {
+        emit AttachTransactionDescription(msg.sender, usr, codeHash, parameters, earliestExecutionTime, description);
+    }
     function protestAgainstTransaction(address usr, bytes32 codeHash, bytes memory parameters, uint earliestExecutionTime)
         public
     {
@@ -130,7 +153,7 @@ contract DSProtestPause is DSAuth, DSNote {
           transactionDelays[partiallyHashedTx].totalDelay = multipliedDelay;
         }
 
-        emit ProtestAgainstTransaction(usr, codeHash, parameters, transactionDelays[partiallyHashedTx].totalDelay);
+        emit ProtestAgainstTransaction(msg.sender, usr, codeHash, parameters, transactionDelays[partiallyHashedTx].totalDelay);
     }
     function abandonTransaction(address usr, bytes32 codeHash, bytes memory parameters, uint earliestExecutionTime)
         public auth

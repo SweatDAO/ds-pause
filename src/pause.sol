@@ -35,23 +35,23 @@ contract DSPause is DSAuth, DSNote {
         emit SetDelay(delay_);
     }
 
-    // --- math ---
-
+    // --- Math ---
     function addition(uint x, uint y) internal pure returns (uint z) {
         z = x + y;
         require(z >= x, "ds-pause-add-overflow");
     }
 
     // --- Data ---
-    mapping (bytes32 => bool) public scheduledTransactions;
-    DSPauseProxy public proxy;
-    uint         public delay;
+    mapping (bytes32 => bool)  public scheduledTransactions;
+    DSPauseProxy               public proxy;
+    uint                       public delay;
 
     // --- Events ---
     event SetDelay(uint256 delay);
     event ScheduleTransaction(address sender, address usr, bytes32 codeHash, bytes parameters, uint earliestExecutionTime);
     event AbandonTransaction(address sender, address usr, bytes32 codeHash, bytes parameters, uint earliestExecutionTime);
     event ExecuteTransaction(address sender, address usr, bytes32 codeHash, bytes parameters, uint earliestExecutionTime);
+    event AttachTransactionDescription(address sender, address usr, bytes32 codeHash, bytes parameters, uint earliestExecutionTime, string description);
 
     // --- Init ---
     constructor(uint delay_, address owner_, DSAuthority authority_) public {
@@ -83,6 +83,19 @@ contract DSPause is DSAuth, DSNote {
         require(earliestExecutionTime >= addition(now, delay), "ds-pause-delay-not-respected");
         scheduledTransactions[getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime)] = true;
         emit ScheduleTransaction(msg.sender, usr, codeHash, parameters, earliestExecutionTime);
+    }
+    function scheduleTransaction(address usr, bytes32 codeHash, bytes memory parameters, uint earliestExecutionTime, string memory description)
+        public auth
+    {
+        require(earliestExecutionTime >= addition(now, delay), "ds-pause-delay-not-respected");
+        scheduledTransactions[getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime)] = true;
+        emit ScheduleTransaction(msg.sender, usr, codeHash, parameters, earliestExecutionTime);
+        emit AttachTransactionDescription(msg.sender, usr, codeHash, parameters, earliestExecutionTime, description);
+    }
+    function attachTransactionDescription(address usr, bytes32 codeHash, bytes memory parameters, uint earliestExecutionTime, string memory description)
+        public auth
+    {
+        emit AttachTransactionDescription(msg.sender, usr, codeHash, parameters, earliestExecutionTime, description);
     }
     function abandonTransaction(address usr, bytes32 codeHash, bytes memory parameters, uint earliestExecutionTime)
         public auth
