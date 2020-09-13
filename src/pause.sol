@@ -46,6 +46,8 @@ contract DSPause is DSAuth, DSNote {
     DSPauseProxy               public proxy;
     uint                       public delay;
 
+    bytes32                    public constant DS_PAUSE_TYPE = bytes32("BASIC");
+
     // --- Events ---
     event SetDelay(uint256 delay);
     event ScheduleTransaction(address sender, address usr, bytes32 codeHash, bytes parameters, uint earliestExecutionTime);

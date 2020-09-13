@@ -49,7 +49,7 @@ contract DSProtestPause is DSAuth, DSNote {
 
     // --- Data ---
     mapping (bytes32 => bool)             public scheduledTransactions;
-    mapping (bytes32 => TransactionDelay) public transactionDelays;
+    mapping (bytes32 => TransactionDelay) internal transactionDelays;
 
     DSPauseProxy  public proxy;
     address       public protester;
@@ -57,6 +57,8 @@ contract DSProtestPause is DSAuth, DSNote {
     uint          public delay;
     uint          public delayMultiplier = 1;
     uint constant public MAX_MULTIPLIER  = 3;
+
+    bytes32       public constant DS_PAUSE_TYPE = bytes32("PROTEST");
 
     // --- Events ---
     event SetDelay(uint256 delay);
@@ -179,6 +181,23 @@ contract DSProtestPause is DSAuth, DSNote {
 
         out = proxy.executeTransaction(usr, parameters);
         require(proxy.owner() == address(this), "ds-protest-pause-illegal-storage-change");
+    }
+
+    // --- Getters ---
+    function getTransactionDelays(address usr, bytes32 codeHash, bytes calldata parameters) external view returns (bool, uint256, uint256) {
+        bytes32 partiallyHashedTx = getTransactionDataHash(usr, codeHash, parameters);
+        return (
+          transactionDelays[partiallyHashedTx].protested,
+          transactionDelays[partiallyHashedTx].scheduleTime,
+          transactionDelays[partiallyHashedTx].totalDelay
+        );
+    }
+    function getTransactionDelays(bytes32 txHash) external view returns (bool, uint256, uint256) {
+        return (
+          transactionDelays[txHash].protested,
+          transactionDelays[txHash].scheduleTime,
+          transactionDelays[txHash].totalDelay
+        );
     }
 }
 
