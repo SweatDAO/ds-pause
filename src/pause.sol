@@ -65,7 +65,7 @@ contract DSPause is DSAuth, DSNote {
 
     // --- Util ---
     function getTransactionDataHash(address usr, bytes32 codeHash, bytes memory parameters, uint earliestExecutionTime)
-        internal pure
+        public pure
         returns (bytes32)
     {
         return keccak256(abi.encode(usr, codeHash, parameters, earliestExecutionTime));

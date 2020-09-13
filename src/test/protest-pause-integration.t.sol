@@ -756,6 +756,8 @@ contract IntegrationVotingScenarios is DSTest {
     // Requires governance to vote in a specific proposal to achieve this
     function test_abandonTransaction() public {
 
+        hevm.warp(now + 1);
+
         // make proposal 1 the votedAuthority
         voter1.addVotingWeight(voteQuorum, 100);
         voter1.vote(voteQuorum, address(proposal1));
