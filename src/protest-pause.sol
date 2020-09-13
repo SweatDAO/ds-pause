@@ -57,12 +57,13 @@ contract DSProtestPause is DSAuth, DSNote {
     uint             public delay;
     uint             public delayMultiplier = 1;
     uint             public currentlyScheduledTransactions;
+    uint             public deploymentTime;
 
-    uint             public maxScheduledTransactions = 10;
-    uint             public protestDeadline          = 500; // a tx can be protested against if max 1/2 of the time until earliest execution has passed
-
-    uint256 constant public MAX_DELAY_MULTIPLIER  = 3;
-    bytes32 constant public DS_PAUSE_TYPE         = bytes32("PROTEST");
+    uint256 constant public protesterLifetime        = 3600 * 24 * 548;     // approx 1 year and a half
+    uint256 constant public maxScheduledTransactions = 10;
+    uint256 constant public protestDeadline          = 500;                 // a tx can be protested against if max 1/2 of the time until earliest execution has passed
+    uint256 constant public MAX_DELAY_MULTIPLIER     = 3;
+    bytes32 constant public DS_PAUSE_TYPE            = bytes32("PROTEST");
 
     // --- Events ---
     event SetDelay(uint256 delay);
@@ -79,6 +80,7 @@ contract DSProtestPause is DSAuth, DSNote {
         delay = delay_;
         owner = owner_;
         authority = authority_;
+        deploymentTime = now;
         proxy = new DSPauseProxy();
     }
 
@@ -169,6 +171,7 @@ contract DSProtestPause is DSAuth, DSNote {
         public
     {
         require(msg.sender == protester, "ds-protest-pause-sender-not-protester");
+        require(addition(protesterLifetime, deploymentTime) > now, "ds-protest-pause-protester-lifetime-passed");
         bytes32 partiallyHashedTx = getTransactionDataHash(usr, codeHash, parameters);
         require(transactionDelays[partiallyHashedTx].scheduleTime > 0, "ds-protest-pause-null-inexistent-transaction");
         require(!transactionDelays[partiallyHashedTx].protested, "ds-protest-pause-tx-already-protested");
