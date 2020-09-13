@@ -92,7 +92,7 @@ contract Test is DSTest {
         stranger = new Stranger();
 
         uint delay = 1 days;
-        pause = new DSProtestPause(delay, address(0x0), new Authority());
+        pause = new DSProtestPause(7 days, delay, address(0x0), new Authority());
     }
 
     // returns the 1st 32 bytes of data from a bytes array
@@ -130,18 +130,18 @@ contract AdminScripts {
 contract Constructor is DSTest {
     function setUp() public {}
     function test_delay_set() public {
-        DSProtestPause pause = new DSProtestPause(100, address(0x0), new Authority());
+        DSProtestPause pause = new DSProtestPause(7 days, 100, address(0x0), new Authority());
         assertEq(pause.delay(), 100);
     }
 
     function test_owner_set() public {
-        DSProtestPause pause = new DSProtestPause(100, address(0xdeadbeef), new Authority());
+        DSProtestPause pause = new DSProtestPause(7 days, 100, address(0xdeadbeef), new Authority());
         assertEq(address(pause.owner()), address(0xdeadbeef));
     }
 
     function test_authority_set() public {
         Authority authority = new Authority();
-        DSProtestPause pause = new DSProtestPause(100, address(0x0), authority);
+        DSProtestPause pause = new DSProtestPause(7 days, 100, address(0x0), authority);
         assertEq(address(pause.authority()), address(authority));
     }
 

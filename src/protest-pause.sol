@@ -58,8 +58,8 @@ contract DSProtestPause is DSAuth, DSNote {
     uint             public delayMultiplier = 1;
     uint             public currentlyScheduledTransactions;
     uint             public deploymentTime;
+    uint             public protesterLifetime;
 
-    uint256 constant public protesterLifetime        = 3600 * 24 * 548;     // approx 1 year and a half
     uint256 constant public maxScheduledTransactions = 10;
     uint256 constant public protestDeadline          = 500;                 // a tx can be protested against if max 1/2 of the time until earliest execution has passed
     uint256 constant public MAX_DELAY_MULTIPLIER     = 3;
@@ -75,12 +75,13 @@ contract DSProtestPause is DSAuth, DSNote {
     event AttachTransactionDescription(address sender, address usr, bytes32 codeHash, bytes parameters, uint earliestExecutionTime, string description);
 
     // --- Init ---
-    constructor(uint delay_, address owner_, DSAuthority authority_) public {
+    constructor(uint protesterLifetime_, uint delay_, address owner_, DSAuthority authority_) public {
         require(both(protestDeadline > 0, protestDeadline < 1000), "ds-protest-pause-invalid-protest-deadline");
         delay = delay_;
         owner = owner_;
         authority = authority_;
         deploymentTime = now;
+        protesterLifetime = protesterLifetime_;
         proxy = new DSPauseProxy();
     }
 

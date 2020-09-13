@@ -198,7 +198,7 @@ contract Integration is Test {
     function test_multisig_dsRecursiveRoles_integration() public {
 
         DSDelegateRoles roles = new DSDelegateRoles();
-        DSProtestPause pause = new DSProtestPause(delay, msg.sender, roles);
+        DSProtestPause pause = new DSProtestPause(7 days, delay, msg.sender, roles);
         VoteQuorum voteQuorum = voteQuorumFactory.newVoteQuorum(gov, maxBallotSize);
 
         roles.setAuthority(voteQuorum);
@@ -246,7 +246,7 @@ contract Integration is Test {
 
         // create gov system
         VoteQuorum voteQuorum = voteQuorumFactory.newVoteQuorum(gov, maxBallotSize);
-        DSProtestPause pause = new DSProtestPause(delay, msg.sender, roles);
+        DSProtestPause pause = new DSProtestPause(7 days, delay, msg.sender, roles);
 
         // adding roles
         roles.setAuthority(voteQuorum);
@@ -282,7 +282,7 @@ contract Integration is Test {
 
         // 1. Only multisig rules
         DSDelegateRoles roles = new DSDelegateRoles();
-        DSProtestPause pause = new DSProtestPause(delay, msg.sender, roles);
+        DSProtestPause pause = new DSProtestPause(7 days, delay, msg.sender, roles);
 
         target.addAuthorization(address(pause.proxy()));
         target.removeAuthorization(address(this));
@@ -409,7 +409,7 @@ contract Integration is Test {
     function test_voteQuorum_direct_integration() public {
         // create gov system
         VoteQuorum voteQuorum = voteQuorumFactory.newVoteQuorum(gov, maxBallotSize);
-        DSProtestPause pause = new DSProtestPause(delay, address(0x0), voteQuorum);
+        DSProtestPause pause = new DSProtestPause(7 days, delay, address(0x0), voteQuorum);
         target.addAuthorization(address(pause.proxy()));
         target.removeAuthorization(address(this));
 
@@ -513,7 +513,7 @@ contract UpgradeVoteQuorum is Test {
     function test_quorum_upgrade() public {
         // create gov system
         VoteQuorum oldVoteQuorum = voteQuorumFactory.newVoteQuorum(gov, maxBallotSize);
-        DSProtestPause pause = new DSProtestPause(delay, address(0x0), oldVoteQuorum);
+        DSProtestPause pause = new DSProtestPause(7 days, delay, address(0x0), oldVoteQuorum);
 
         // make pause the only owner of the target
         target.addAuthorization(address(pause.proxy()));
@@ -614,7 +614,7 @@ contract IntegrationVotingScenarios is DSTest {
 
         // create gov system
         voteQuorum = voteQuorumFactory.newVoteQuorum(gov, maxBallotSize);
-        DSProtestPause pause = new DSProtestPause(delay, address(0x0), voteQuorum);
+        DSProtestPause pause = new DSProtestPause(7 days, delay, address(0x0), voteQuorum);
         target.addAuthorization(address(pause.proxy()));
         target.removeAuthorization(address(this));
 
