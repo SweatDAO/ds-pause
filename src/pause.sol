@@ -31,6 +31,7 @@ contract DSPause is DSAuth, DSNote {
         emit LogSetAuthority(address(authority));
     }
     function setDelay(uint delay_) public isDelayed {
+        require(delay_ <= MAX_DELAY, "ds-pause-delay-not-within-bounds");
         delay = delay_;
         emit SetDelay(delay_);
     }
@@ -40,12 +41,16 @@ contract DSPause is DSAuth, DSNote {
         z = x + y;
         require(z >= x, "ds-pause-add-overflow");
     }
+    function subtract(uint x, uint y) internal pure returns (uint z) {
+        require((z = x - y) <= x, "ds-pause-sub-underflow");
+    }
 
     // --- Data ---
     mapping (bytes32 => bool)  public scheduledTransactions;
     DSPauseProxy               public proxy;
     uint                       public delay;
 
+    uint256                    public constant MAX_DELAY     = 28 days;
     bytes32                    public constant DS_PAUSE_TYPE = bytes32("BASIC");
 
     // --- Events ---
@@ -57,6 +62,7 @@ contract DSPause is DSAuth, DSNote {
 
     // --- Init ---
     constructor(uint delay_, address owner_, DSAuthority authority_) public {
+        require(delay_ <= MAX_DELAY, "ds-pause-delay-not-within-bounds");
         delay = delay_;
         owner = owner_;
         authority = authority_;
@@ -82,6 +88,7 @@ contract DSPause is DSAuth, DSNote {
     function scheduleTransaction(address usr, bytes32 codeHash, bytes memory parameters, uint earliestExecutionTime)
         public auth
     {
+        require(subtract(earliestExecutionTime, now) <= MAX_DELAY, "ds-pause-delay-not-within-bounds");
         require(earliestExecutionTime >= addition(now, delay), "ds-pause-delay-not-respected");
         scheduledTransactions[getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime)] = true;
         emit ScheduleTransaction(msg.sender, usr, codeHash, parameters, earliestExecutionTime);
@@ -89,6 +96,7 @@ contract DSPause is DSAuth, DSNote {
     function scheduleTransaction(address usr, bytes32 codeHash, bytes memory parameters, uint earliestExecutionTime, string memory description)
         public auth
     {
+        require(subtract(earliestExecutionTime, now) <= MAX_DELAY, "ds-pause-delay-not-within-bounds");
         require(earliestExecutionTime >= addition(now, delay), "ds-pause-delay-not-respected");
         scheduledTransactions[getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime)] = true;
         emit ScheduleTransaction(msg.sender, usr, codeHash, parameters, earliestExecutionTime);

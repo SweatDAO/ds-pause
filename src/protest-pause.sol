@@ -31,6 +31,7 @@ contract DSProtestPause is DSAuth, DSNote {
         emit LogSetAuthority(address(authority));
     }
     function setDelay(uint delay_) public isDelayed {
+        require(delay_ <= MAX_DELAY, "ds-protest-pause-delay-not-within-bounds");
         delay = delay_;
         emit SetDelay(delay_);
     }
@@ -60,6 +61,7 @@ contract DSProtestPause is DSAuth, DSNote {
     uint             public deploymentTime;
     uint             public protesterLifetime;
 
+    uint256 constant public MAX_DELAY                = 28 days;
     uint256 constant public maxScheduledTransactions = 10;
     uint256 constant public protestEnd               = 500;                 // a tx can be protested against if max 1/2 of the time until earliest execution has passed
     uint256 constant public MAX_DELAY_MULTIPLIER     = 3;
@@ -76,6 +78,7 @@ contract DSProtestPause is DSAuth, DSNote {
 
     // --- Init ---
     constructor(uint protesterLifetime_, uint delay_, address owner_, DSAuthority authority_) public {
+        require(delay_ <= MAX_DELAY, "ds-protest-pause-delay-not-within-bounds");
         require(both(protestEnd > 0, protestEnd < 1000), "ds-protest-pause-invalid-protest-deadline");
         delay = delay_;
         owner = owner_;
@@ -229,6 +232,7 @@ contract DSProtestPause is DSAuth, DSNote {
 
     // --- Internal ---
     function schedule(address usr, bytes32 codeHash, bytes memory parameters, uint earliestExecutionTime) internal {
+        require(subtract(earliestExecutionTime, now) <= MAX_DELAY, "ds-protest-pause-delay-not-within-bounds");
         require(earliestExecutionTime >= addition(now, delay), "ds-protest-pause-delay-not-respected");
         bytes32 fullyHashedTx = getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime);
         bytes32 partiallyHashedTx = getTransactionDataHash(usr, codeHash, parameters);
