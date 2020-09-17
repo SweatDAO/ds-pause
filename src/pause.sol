@@ -113,6 +113,7 @@ contract DSPause is DSAuth, DSNote {
     function attachTransactionDescription(address usr, bytes32 codeHash, bytes memory parameters, uint earliestExecutionTime, string memory description)
         public auth
     {
+        require(scheduledTransactions[getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime)], "ds-pause-unplotted-plan");
         emit AttachTransactionDescription(msg.sender, usr, codeHash, parameters, earliestExecutionTime, description);
     }
     function abandonTransaction(address usr, bytes32 codeHash, bytes memory parameters, uint earliestExecutionTime)
