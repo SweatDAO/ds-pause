@@ -49,9 +49,11 @@ contract DSPause is DSAuth, DSNote {
     mapping (bytes32 => bool)  public scheduledTransactions;
     DSPauseProxy               public proxy;
     uint                       public delay;
+    uint                       public currentlyScheduledTransactions;
 
-    uint256                    public constant MAX_DELAY     = 28 days;
-    bytes32                    public constant DS_PAUSE_TYPE = bytes32("BASIC");
+    uint256                    public constant maxScheduledTransactions = 10;
+    uint256                    public constant MAX_DELAY                = 28 days;
+    bytes32                    public constant DS_PAUSE_TYPE            = bytes32("BASIC");
 
     // --- Events ---
     event SetDelay(uint256 delay);
@@ -88,16 +90,22 @@ contract DSPause is DSAuth, DSNote {
     function scheduleTransaction(address usr, bytes32 codeHash, bytes memory parameters, uint earliestExecutionTime)
         public auth
     {
+        require(!scheduledTransactions[getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime)], "ds-pause-plotted-plan");
         require(subtract(earliestExecutionTime, now) <= MAX_DELAY, "ds-pause-delay-not-within-bounds");
         require(earliestExecutionTime >= addition(now, delay), "ds-pause-delay-not-respected");
+        require(currentlyScheduledTransactions < maxScheduledTransactions, "ds-pause-too-many-scheduled");
+        currentlyScheduledTransactions = addition(currentlyScheduledTransactions, 1);
         scheduledTransactions[getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime)] = true;
         emit ScheduleTransaction(msg.sender, usr, codeHash, parameters, earliestExecutionTime);
     }
     function scheduleTransaction(address usr, bytes32 codeHash, bytes memory parameters, uint earliestExecutionTime, string memory description)
         public auth
     {
+        require(!scheduledTransactions[getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime)], "ds-pause-plotted-plan");
         require(subtract(earliestExecutionTime, now) <= MAX_DELAY, "ds-pause-delay-not-within-bounds");
         require(earliestExecutionTime >= addition(now, delay), "ds-pause-delay-not-respected");
+        require(currentlyScheduledTransactions < maxScheduledTransactions, "ds-pause-too-many-scheduled");
+        currentlyScheduledTransactions = addition(currentlyScheduledTransactions, 1);
         scheduledTransactions[getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime)] = true;
         emit ScheduleTransaction(msg.sender, usr, codeHash, parameters, earliestExecutionTime);
         emit AttachTransactionDescription(msg.sender, usr, codeHash, parameters, earliestExecutionTime, description);
@@ -110,7 +118,9 @@ contract DSPause is DSAuth, DSNote {
     function abandonTransaction(address usr, bytes32 codeHash, bytes memory parameters, uint earliestExecutionTime)
         public auth
     {
+        require(scheduledTransactions[getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime)], "ds-pause-unplotted-plan");
         scheduledTransactions[getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime)] = false;
+        currentlyScheduledTransactions = subtract(currentlyScheduledTransactions, 1);
         emit AbandonTransaction(msg.sender, usr, codeHash, parameters, earliestExecutionTime);
     }
     function executeTransaction(address usr, bytes32 codeHash, bytes memory parameters, uint earliestExecutionTime)
@@ -122,6 +132,7 @@ contract DSPause is DSAuth, DSNote {
         require(now >= earliestExecutionTime, "ds-pause-premature-exec");
 
         scheduledTransactions[getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime)] = false;
+        currentlyScheduledTransactions = subtract(currentlyScheduledTransactions, 1);
 
         emit ExecuteTransaction(msg.sender, usr, codeHash, parameters, earliestExecutionTime);
 
