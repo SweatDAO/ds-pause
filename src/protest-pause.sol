@@ -193,6 +193,9 @@ contract DSProtestPause is DSAuth, DSNote {
         transactionDelays[partiallyHashedTx].protested = true;
 
         uint multipliedDelay = multiply(delay, delayMultiplier);
+        if (multipliedDelay > MAX_DELAY) {
+          multipliedDelay = MAX_DELAY;
+        }
         if (transactionDelays[partiallyHashedTx].totalDelay < multipliedDelay) {
           transactionDelays[partiallyHashedTx].totalDelay = multipliedDelay;
         }
