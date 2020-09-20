@@ -51,6 +51,7 @@ contract DSPause is DSAuth, DSNote {
     uint                       public delay;
     uint                       public currentlyScheduledTransactions;
 
+    uint256                    public constant EXEC_TIME                = 3 days;
     uint256                    public constant maxScheduledTransactions = 10;
     uint256                    public constant MAX_DELAY                = 28 days;
     bytes32                    public constant DS_PAUSE_TYPE            = bytes32("BASIC");
@@ -131,6 +132,7 @@ contract DSPause is DSAuth, DSNote {
         require(scheduledTransactions[getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime)], "ds-pause-unplotted-plan");
         require(getExtCodeHash(usr) == codeHash, "ds-pause-wrong-codehash");
         require(now >= earliestExecutionTime, "ds-pause-premature-exec");
+        require(now < addition(earliestExecutionTime, EXEC_TIME), "ds-pause-expired-tx");
 
         scheduledTransactions[getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime)] = false;
         currentlyScheduledTransactions = subtract(currentlyScheduledTransactions, 1);

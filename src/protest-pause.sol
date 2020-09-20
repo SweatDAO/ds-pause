@@ -61,6 +61,7 @@ contract DSProtestPause is DSAuth, DSNote {
     uint             public deploymentTime;
     uint             public protesterLifetime;
 
+    uint256 constant public EXEC_TIME                = 3 days;
     uint256 constant public MAX_DELAY                = 28 days;
     uint256 constant public maxScheduledTransactions = 10;
     uint256 constant public protestEnd               = 500;                 // a tx can be protested against if max 1/2 of the time until earliest execution has passed
@@ -219,9 +220,11 @@ contract DSProtestPause is DSAuth, DSNote {
     {
         bytes32 fullyHashedTx = getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime);
         bytes32 partiallyHashedTx = getTransactionDataHash(usr, codeHash, parameters);
+        uint executionStart = addition(transactionDelays[partiallyHashedTx].scheduleTime, transactionDelays[partiallyHashedTx].totalDelay);
         require(scheduledTransactions[fullyHashedTx], "ds-protest-pause-inexistent-transaction");
         require(getExtCodeHash(usr) == codeHash, "ds-protest-pause-wrong-codehash");
-        require(now >= addition(transactionDelays[partiallyHashedTx].scheduleTime, transactionDelays[partiallyHashedTx].totalDelay), "ds-protest-pause-premature-exec");
+        require(now >= executionStart, "ds-protest-pause-premature-exec");
+        require(now < addition(executionStart, EXEC_TIME), "ds-protest-pause-expired-tx");
 
         scheduledTransactions[fullyHashedTx] = false;
         delete(transactionDelays[partiallyHashedTx]);
@@ -248,8 +251,8 @@ contract DSProtestPause is DSAuth, DSNote {
     }
 
     // --- Getters ---
-    function getTransactionDelays(address usr, bytes32 codeHash, bytes memory parameters, uint earliestExecutionTime) public view returns (bool, uint256, uint256) {
-        bytes32 hashedTx = getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime);
+    function getTransactionDelays(address usr, bytes32 codeHash, bytes memory parameters) public view returns (bool, uint256, uint256) {
+        bytes32 hashedTx = getTransactionDataHash(usr, codeHash, parameters);
         return (
           transactionDelays[hashedTx].protested,
           transactionDelays[hashedTx].scheduleTime,
