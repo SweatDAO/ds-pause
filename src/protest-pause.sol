@@ -30,6 +30,10 @@ contract DSProtestPause is DSAuth, DSNote {
         authority = authority_;
         emit LogSetAuthority(address(authority));
     }
+    function setProtester(address protester_) public isDelayed {
+        protester = protester_;
+        emit SetProtester(address(protester));
+    }
     function setDelay(uint delay_) public isDelayed {
         require(delay_ <= MAX_DELAY, "ds-protest-pause-delay-not-within-bounds");
         delay = delay_;
@@ -70,6 +74,7 @@ contract DSProtestPause is DSAuth, DSNote {
 
     // --- Events ---
     event SetDelay(uint256 delay);
+    event SetProtester(address protester);
     event ChangeDelayMultiplier(uint256 multiplier);
     event ScheduleTransaction(address sender, address usr, bytes32 codeHash, bytes parameters, uint earliestExecutionTime);
     event AbandonTransaction(address sender, address usr, bytes32 codeHash, bytes parameters, uint earliestExecutionTime);
