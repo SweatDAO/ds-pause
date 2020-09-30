@@ -45,9 +45,22 @@ contract DSPause is DSAuth, DSNote {
         require((z = x - y) <= x, "ds-pause-sub-underflow");
     }
 
+    // --- Structs ---
+    struct TransactionDetails {
+        address usr;
+        uint256 earliestExecutionTime;
+        bytes32 codeHash;
+        bytes parameters;
+    }
+
     // --- Data ---
-    mapping (bytes32 => bool)  public scheduledTransactions;
+    mapping (bytes32 => bool)               public scheduledTransactions;
+    mapping (uint256 => TransactionDetails) public transactionDetails;
+    mapping (bytes32 => uint256)            public txHashId;
+
     DSPauseProxy               public proxy;
+
+    uint                       public nonce;
     uint                       public delay;
     uint                       public currentlyScheduledTransactions;
 
@@ -58,10 +71,10 @@ contract DSPause is DSAuth, DSNote {
 
     // --- Events ---
     event SetDelay(uint256 delay);
-    event ScheduleTransaction(address sender, address usr, bytes32 codeHash, bytes parameters, uint earliestExecutionTime);
-    event AbandonTransaction(address sender, address usr, bytes32 codeHash, bytes parameters, uint earliestExecutionTime);
-    event ExecuteTransaction(address sender, address usr, bytes32 codeHash, bytes parameters, uint earliestExecutionTime);
-    event AttachTransactionDescription(address sender, address usr, bytes32 codeHash, bytes parameters, uint earliestExecutionTime, string description);
+    event ScheduleTransaction(address sender, uint txId, address usr, bytes32 codeHash, bytes parameters, uint earliestExecutionTime);
+    event AbandonTransaction(address sender, uint txId, address usr, bytes32 codeHash, bytes parameters, uint earliestExecutionTime);
+    event ExecuteTransaction(address sender, uint txId, address usr, bytes32 codeHash, bytes parameters, uint earliestExecutionTime);
+    event AttachTransactionDescription(address sender, uint txId, address usr, bytes32 codeHash, bytes parameters, uint earliestExecutionTime, string description);
 
     // --- Init ---
     constructor(uint delay_, address owner_, DSAuthority authority_) public {
@@ -91,56 +104,137 @@ contract DSPause is DSAuth, DSNote {
     function scheduleTransaction(address usr, bytes32 codeHash, bytes memory parameters, uint earliestExecutionTime)
         public auth
     {
-        require(!scheduledTransactions[getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime)], "ds-pause-plotted-plan");
-        require(subtract(earliestExecutionTime, now) <= MAX_DELAY, "ds-pause-delay-not-within-bounds");
-        require(earliestExecutionTime >= addition(now, delay), "ds-pause-delay-not-respected");
-        require(currentlyScheduledTransactions < maxScheduledTransactions, "ds-pause-too-many-scheduled");
-        currentlyScheduledTransactions = addition(currentlyScheduledTransactions, 1);
-        scheduledTransactions[getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime)] = true;
-        emit ScheduleTransaction(msg.sender, usr, codeHash, parameters, earliestExecutionTime);
+        schedule(usr, codeHash, parameters, earliestExecutionTime);
     }
     function scheduleTransaction(address usr, bytes32 codeHash, bytes memory parameters, uint earliestExecutionTime, string memory description)
         public auth
     {
-        require(!scheduledTransactions[getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime)], "ds-pause-plotted-plan");
-        require(subtract(earliestExecutionTime, now) <= MAX_DELAY, "ds-pause-delay-not-within-bounds");
-        require(earliestExecutionTime >= addition(now, delay), "ds-pause-delay-not-respected");
-        require(currentlyScheduledTransactions < maxScheduledTransactions, "ds-pause-too-many-scheduled");
-        currentlyScheduledTransactions = addition(currentlyScheduledTransactions, 1);
-        scheduledTransactions[getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime)] = true;
-        emit ScheduleTransaction(msg.sender, usr, codeHash, parameters, earliestExecutionTime);
-        emit AttachTransactionDescription(msg.sender, usr, codeHash, parameters, earliestExecutionTime, description);
+        schedule(usr, codeHash, parameters, earliestExecutionTime);
+        emit AttachTransactionDescription(msg.sender, nonce, usr, codeHash, parameters, earliestExecutionTime, description);
     }
     function attachTransactionDescription(address usr, bytes32 codeHash, bytes memory parameters, uint earliestExecutionTime, string memory description)
         public auth
     {
-        require(scheduledTransactions[getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime)], "ds-pause-unplotted-plan");
-        emit AttachTransactionDescription(msg.sender, usr, codeHash, parameters, earliestExecutionTime, description);
+        bytes32 hashedTx = getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime);
+        require(scheduledTransactions[hashedTx], "ds-pause-unscheduled-tx");
+
+        emit AttachTransactionDescription(msg.sender, txHashId[hashedTx], usr, codeHash, parameters, earliestExecutionTime, description);
+    }
+    function attachTransactionDescription(uint256 txId, string memory description)
+        public auth
+    {
+        require(txId <= nonce, "ds-pause-inexistent-tx");
+
+        address usr                = transactionDetails[txId].usr;
+        bytes32 codeHash           = transactionDetails[txId].codeHash;
+        bytes memory parameters    = transactionDetails[txId].parameters;
+        uint earliestExecutionTime = transactionDetails[txId].earliestExecutionTime;
+
+        bytes32 hashedTx = getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime);
+        require(scheduledTransactions[hashedTx], "ds-pause-unscheduled-tx");
+
+        emit AttachTransactionDescription(msg.sender, txId, usr, codeHash, parameters, earliestExecutionTime, description);
     }
     function abandonTransaction(address usr, bytes32 codeHash, bytes memory parameters, uint earliestExecutionTime)
         public auth
     {
-        require(scheduledTransactions[getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime)], "ds-pause-unplotted-plan");
-        scheduledTransactions[getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime)] = false;
-        currentlyScheduledTransactions = subtract(currentlyScheduledTransactions, 1);
-        emit AbandonTransaction(msg.sender, usr, codeHash, parameters, earliestExecutionTime);
+        bytes32 hashedTx = getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime);
+        require(scheduledTransactions[hashedTx], "ds-pause-unscheduled-tx");
+
+        scheduledTransactions[hashedTx] = false;
+        currentlyScheduledTransactions  = subtract(currentlyScheduledTransactions, 1);
+
+        emit AbandonTransaction(msg.sender, txHashId[hashedTx], usr, codeHash, parameters, earliestExecutionTime);
+
+        delete(transactionDetails[txHashId[hashedTx]]);
+        txHashId[hashedTx]              = 0;
+    }
+    function abandonTransaction(uint256 txId)
+        public auth
+    {
+        require(txId <= nonce, "ds-pause-inexistent-tx");
+
+        address usr                = transactionDetails[txId].usr;
+        bytes32 codeHash           = transactionDetails[txId].codeHash;
+        bytes memory parameters    = transactionDetails[txId].parameters;
+        uint earliestExecutionTime = transactionDetails[txId].earliestExecutionTime;
+
+        bytes32 hashedTx = getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime);
+        require(scheduledTransactions[hashedTx], "ds-pause-unscheduled-tx");
+
+        scheduledTransactions[hashedTx] = false;
+        currentlyScheduledTransactions  = subtract(currentlyScheduledTransactions, 1);
+
+        emit AbandonTransaction(msg.sender, txId, usr, codeHash, parameters, earliestExecutionTime);
+
+        delete(transactionDetails[txHashId[hashedTx]]);
+        txHashId[hashedTx]              = 0;
     }
     function executeTransaction(address usr, bytes32 codeHash, bytes memory parameters, uint earliestExecutionTime)
         public
         returns (bytes memory out)
     {
-        require(scheduledTransactions[getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime)], "ds-pause-unplotted-plan");
         require(getExtCodeHash(usr) == codeHash, "ds-pause-wrong-codehash");
-        require(now >= earliestExecutionTime, "ds-pause-premature-exec");
-        require(now < addition(earliestExecutionTime, EXEC_TIME), "ds-pause-expired-tx");
 
-        scheduledTransactions[getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime)] = false;
-        currentlyScheduledTransactions = subtract(currentlyScheduledTransactions, 1);
+        bytes32 hashedTx = getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime);
+        require(scheduledTransactions[hashedTx], "ds-pause-unscheduled-tx");
 
-        emit ExecuteTransaction(msg.sender, usr, codeHash, parameters, earliestExecutionTime);
+        emit ExecuteTransaction(msg.sender, txHashId[hashedTx], usr, codeHash, parameters, earliestExecutionTime);
+        checkExecutionAndRemoveScheduled(hashedTx, earliestExecutionTime);
 
         out = proxy.executeTransaction(usr, parameters);
         require(proxy.owner() == address(this), "ds-pause-illegal-storage-change");
+    }
+    function executeTransaction(uint txId)
+        public
+        returns (bytes memory out)
+    {
+        require(txId <= nonce, "ds-pause-inexistent-tx");
+
+        address usr                = transactionDetails[txId].usr;
+        bytes32 codeHash           = transactionDetails[txId].codeHash;
+        bytes memory parameters    = transactionDetails[txId].parameters;
+        uint earliestExecutionTime = transactionDetails[txId].earliestExecutionTime;
+
+        require(getExtCodeHash(usr) == codeHash, "ds-pause-wrong-codehash");
+
+        bytes32 hashedTx = getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime);
+        require(scheduledTransactions[hashedTx], "ds-pause-unscheduled-tx");
+
+        emit ExecuteTransaction(msg.sender, txId, usr, codeHash, parameters, earliestExecutionTime);
+        checkExecutionAndRemoveScheduled(hashedTx, earliestExecutionTime);
+
+        out = proxy.executeTransaction(usr, parameters);
+        require(proxy.owner() == address(this), "ds-pause-illegal-storage-change");
+    }
+
+    // --- Internal ---
+    function schedule(address usr, bytes32 codeHash, bytes memory parameters, uint earliestExecutionTime) internal {
+        bytes32 hashedTx = getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime);
+
+        require(!scheduledTransactions[hashedTx], "ds-pause-plotted-plan");
+        require(subtract(earliestExecutionTime, now) <= MAX_DELAY, "ds-pause-delay-not-within-bounds");
+        require(earliestExecutionTime >= addition(now, delay), "ds-pause-delay-not-respected");
+        require(currentlyScheduledTransactions < maxScheduledTransactions, "ds-pause-too-many-scheduled");
+        require(txHashId[hashedTx] == 0, "ds-pause-tx-already-scheduled");
+
+        currentlyScheduledTransactions  = addition(currentlyScheduledTransactions, 1);
+        nonce                           = addition(nonce, 1);
+        scheduledTransactions[hashedTx] = true;
+        txHashId[hashedTx]              = nonce;
+        transactionDetails[nonce]       = TransactionDetails(usr, earliestExecutionTime, codeHash, parameters);
+
+        emit ScheduleTransaction(msg.sender, nonce, usr, codeHash, parameters, earliestExecutionTime);
+    }
+    function checkExecutionAndRemoveScheduled(bytes32 hashedTx, uint earliestExecutionTime) internal {
+        require(now >= earliestExecutionTime, "ds-pause-premature-exec");
+        require(now <= addition(earliestExecutionTime, EXEC_TIME), "ds-pause-expired-tx");
+
+        scheduledTransactions[hashedTx] = false;
+        currentlyScheduledTransactions  = subtract(currentlyScheduledTransactions, 1);
+
+        delete(transactionDetails[txHashId[hashedTx]]);
+        txHashId[hashedTx]              = 0;
     }
 }
 

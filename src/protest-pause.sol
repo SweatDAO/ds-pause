@@ -51,14 +51,23 @@ contract DSProtestPause is DSAuth, DSNote {
         uint scheduleTime;
         uint totalDelay;
     }
+    struct TransactionDetails {
+        address usr;
+        uint256 earliestExecutionTime;
+        bytes32 codeHash;
+        bytes parameters;
+    }
 
     // --- Data ---
-    mapping (bytes32 => bool)             public scheduledTransactions;
-    mapping (bytes32 => TransactionDelay) internal transactionDelays;
+    mapping (bytes32 => bool)               public scheduledTransactions;
+    mapping (bytes32 => TransactionDelay)   internal transactionDelays;
+    mapping (uint256 => TransactionDetails) public transactionDetails;
+    mapping (bytes32 => uint256)            public txHashId;
 
     DSPauseProxy     public proxy;
     address          public protester;
 
+    uint             public nonce;
     uint             public delay;
     uint             public delayMultiplier = 1;
     uint             public currentlyScheduledTransactions;
@@ -76,11 +85,11 @@ contract DSProtestPause is DSAuth, DSNote {
     event SetDelay(uint256 delay);
     event SetProtester(address protester);
     event ChangeDelayMultiplier(uint256 multiplier);
-    event ScheduleTransaction(address sender, address usr, bytes32 codeHash, bytes parameters, uint earliestExecutionTime);
-    event AbandonTransaction(address sender, address usr, bytes32 codeHash, bytes parameters, uint earliestExecutionTime);
-    event ProtestAgainstTransaction(address sender, address usr, bytes32 codeHash, bytes parameters, uint totalDelay);
-    event ExecuteTransaction(address sender, address usr, bytes32 codeHash, bytes parameters, uint earliestExecutionTime);
-    event AttachTransactionDescription(address sender, address usr, bytes32 codeHash, bytes parameters, uint earliestExecutionTime, string description);
+    event ScheduleTransaction(address sender, uint txId, address usr, bytes32 codeHash, bytes parameters, uint earliestExecutionTime);
+    event AbandonTransaction(address sender, uint txId, address usr, bytes32 codeHash, bytes parameters, uint earliestExecutionTime);
+    event ExecuteTransaction(address sender, uint txId, address usr, bytes32 codeHash, bytes parameters, uint earliestExecutionTime);
+    event AttachTransactionDescription(address sender, uint txId, address usr, bytes32 codeHash, bytes parameters, uint earliestExecutionTime, string description);
+    event ProtestAgainstTransaction(address sender, uint txId, address usr, bytes32 codeHash, bytes parameters, uint totalDelay);
 
     // --- Init ---
     constructor(uint protesterLifetime_, uint delay_, address owner_, DSAuthority authority_) public {
@@ -138,6 +147,21 @@ contract DSProtestPause is DSAuth, DSNote {
           now < protestDeadline(partiallyHashedTx)
         );
     }
+    function protestWindowAvailable(uint txId) external view returns (bool) {
+        if (txId > nonce) return false;
+
+        address usr                = transactionDetails[txId].usr;
+        bytes32 codeHash           = transactionDetails[txId].codeHash;
+        bytes memory parameters    = transactionDetails[txId].parameters;
+
+        bytes32 partiallyHashedTx  = getTransactionDataHash(usr, codeHash, parameters);
+        (bool protested, ,) = getTransactionDelays(partiallyHashedTx);
+        if (protested) return false;
+
+        return (
+          now < protestDeadline(partiallyHashedTx)
+        );
+    }
     function protestWindowAvailable(bytes32 txHash) external view returns (bool) {
         (bool protested, ,) = getTransactionDelays(txHash);
         if (protested) return false;
@@ -151,6 +175,22 @@ contract DSProtestPause is DSAuth, DSNote {
         if (protested) return 0;
         uint protestDeadline = protestDeadline(partiallyHashedTx);
         if (now >= protestDeadline) return 0;
+        return subtract(protestDeadline, now);
+    }
+    function timeUntilProposalProtestDeadline(uint txId) external view returns (uint256) {
+        if (txId > nonce) return 0;
+
+        address usr                = transactionDetails[txId].usr;
+        bytes32 codeHash           = transactionDetails[txId].codeHash;
+        bytes memory parameters    = transactionDetails[txId].parameters;
+
+        bytes32 partiallyHashedTx  = getTransactionDataHash(usr, codeHash, parameters);
+        (bool protested, ,) = getTransactionDelays(partiallyHashedTx);
+        if (protested) return 0;
+
+        uint protestDeadline = protestDeadline(partiallyHashedTx);
+        if (now >= protestDeadline) return 0;
+
         return subtract(protestDeadline, now);
     }
     function timeUntilProposalProtestDeadline(bytes32 txHash) external view returns (uint256) {
@@ -174,21 +214,44 @@ contract DSProtestPause is DSAuth, DSNote {
         public auth
     {
         schedule(usr, codeHash, parameters, earliestExecutionTime);
-        emit AttachTransactionDescription(msg.sender, usr, codeHash, parameters, earliestExecutionTime, description);
+        emit AttachTransactionDescription(msg.sender, nonce, usr, codeHash, parameters, earliestExecutionTime, description);
     }
     function attachTransactionDescription(address usr, bytes32 codeHash, bytes memory parameters, uint earliestExecutionTime, string memory description)
         public auth
     {
+        bytes32 fullyHashedTx     = getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime);
         bytes32 partiallyHashedTx = getTransactionDataHash(usr, codeHash, parameters);
+
         require(transactionDelays[partiallyHashedTx].scheduleTime > 0, "ds-protest-pause-cannot-attach-for-null");
-        emit AttachTransactionDescription(msg.sender, usr, codeHash, parameters, earliestExecutionTime, description);
+        emit AttachTransactionDescription(msg.sender, txHashId[fullyHashedTx], usr, codeHash, parameters, earliestExecutionTime, description);
     }
-    function protestAgainstTransaction(address usr, bytes32 codeHash, bytes memory parameters)
+    function attachTransactionDescription(uint txId, string memory description)
+        public auth
+    {
+        require(txId <= nonce, "ds-protest-pause-inexistent-tx");
+
+        address usr                = transactionDetails[txId].usr;
+        bytes32 codeHash           = transactionDetails[txId].codeHash;
+        bytes memory parameters    = transactionDetails[txId].parameters;
+        uint earliestExecutionTime = transactionDetails[txId].earliestExecutionTime;
+
+        bytes32 partiallyHashedTx  = getTransactionDataHash(usr, codeHash, parameters);
+
+        require(transactionDelays[partiallyHashedTx].scheduleTime > 0, "ds-protest-pause-cannot-attach-for-null");
+        emit AttachTransactionDescription(msg.sender, txId, usr, codeHash, parameters, earliestExecutionTime, description);
+    }
+    function protestAgainstTransaction(uint txId)
         public
     {
         require(msg.sender == protester, "ds-protest-pause-sender-not-protester");
         require(addition(protesterLifetime, deploymentTime) > now, "ds-protest-pause-protester-lifetime-passed");
-        bytes32 partiallyHashedTx = getTransactionDataHash(usr, codeHash, parameters);
+        require(txId <= nonce, "ds-protest-pause-inexistent-tx");
+
+        address usr                = transactionDetails[txId].usr;
+        bytes32 codeHash           = transactionDetails[txId].codeHash;
+        bytes memory parameters    = transactionDetails[txId].parameters;
+
+        bytes32 partiallyHashedTx  = getTransactionDataHash(usr, codeHash, parameters);
         require(transactionDelays[partiallyHashedTx].scheduleTime > 0, "ds-protest-pause-null-inexistent-transaction");
         require(!transactionDelays[partiallyHashedTx].protested, "ds-protest-pause-tx-already-protested");
         require(
@@ -206,36 +269,84 @@ contract DSProtestPause is DSAuth, DSNote {
           transactionDelays[partiallyHashedTx].totalDelay = multipliedDelay;
         }
 
-        emit ProtestAgainstTransaction(msg.sender, usr, codeHash, parameters, transactionDelays[partiallyHashedTx].totalDelay);
+        emit ProtestAgainstTransaction(msg.sender, txId, usr, codeHash, parameters, transactionDelays[partiallyHashedTx].totalDelay);
     }
     function abandonTransaction(address usr, bytes32 codeHash, bytes memory parameters, uint earliestExecutionTime)
         public auth
     {
         bytes32 fullyHashedTx = getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime);
         bytes32 partiallyHashedTx = getTransactionDataHash(usr, codeHash, parameters);
+
         require(transactionDelays[partiallyHashedTx].scheduleTime > 0, "ds-protest-pause-cannot-abandon-null");
+
         scheduledTransactions[fullyHashedTx] = false;
         delete(transactionDelays[partiallyHashedTx]);
         currentlyScheduledTransactions = subtract(currentlyScheduledTransactions, 1);
-        emit AbandonTransaction(msg.sender, usr, codeHash, parameters, earliestExecutionTime);
+
+        emit AbandonTransaction(msg.sender, txHashId[fullyHashedTx], usr, codeHash, parameters, earliestExecutionTime);
+
+        delete(transactionDetails[txHashId[fullyHashedTx]]);
+        txHashId[fullyHashedTx] = 0;
+    }
+    function abandonTransaction(uint txId)
+        public auth
+    {
+        require(txId <= nonce, "ds-protest-pause-inexistent-tx");
+
+        address usr                = transactionDetails[txId].usr;
+        bytes32 codeHash           = transactionDetails[txId].codeHash;
+        bytes memory parameters    = transactionDetails[txId].parameters;
+        uint earliestExecutionTime = transactionDetails[txId].earliestExecutionTime;
+
+        bytes32 fullyHashedTx      = getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime);
+        bytes32 partiallyHashedTx  = getTransactionDataHash(usr, codeHash, parameters);
+
+        require(transactionDelays[partiallyHashedTx].scheduleTime > 0, "ds-protest-pause-cannot-abandon-null");
+
+        scheduledTransactions[fullyHashedTx] = false;
+        delete(transactionDelays[partiallyHashedTx]);
+        currentlyScheduledTransactions = subtract(currentlyScheduledTransactions, 1);
+
+        emit AbandonTransaction(msg.sender, txId, usr, codeHash, parameters, earliestExecutionTime);
+
+        delete(transactionDetails[txHashId[fullyHashedTx]]);
+        txHashId[fullyHashedTx] = 0;
     }
     function executeTransaction(address usr, bytes32 codeHash, bytes memory parameters, uint earliestExecutionTime)
         public
         returns (bytes memory out)
     {
-        bytes32 fullyHashedTx = getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime);
-        bytes32 partiallyHashedTx = getTransactionDataHash(usr, codeHash, parameters);
-        uint executionStart = addition(transactionDelays[partiallyHashedTx].scheduleTime, transactionDelays[partiallyHashedTx].totalDelay);
-        require(scheduledTransactions[fullyHashedTx], "ds-protest-pause-inexistent-transaction");
         require(getExtCodeHash(usr) == codeHash, "ds-protest-pause-wrong-codehash");
-        require(now >= executionStart, "ds-protest-pause-premature-exec");
-        require(now < addition(executionStart, EXEC_TIME), "ds-protest-pause-expired-tx");
 
-        scheduledTransactions[fullyHashedTx] = false;
-        delete(transactionDelays[partiallyHashedTx]);
-        currentlyScheduledTransactions = subtract(currentlyScheduledTransactions, 1);
+        bytes32 fullyHashedTx     = getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime);
+        bytes32 partiallyHashedTx = getTransactionDataHash(usr, codeHash, parameters);
+        uint executionStart       = addition(transactionDelays[partiallyHashedTx].scheduleTime, transactionDelays[partiallyHashedTx].totalDelay);
 
-        emit ExecuteTransaction(msg.sender, usr, codeHash, parameters, earliestExecutionTime);
+        emit ExecuteTransaction(msg.sender, txHashId[fullyHashedTx], usr, codeHash, parameters, earliestExecutionTime);
+        checkExecutionAndRemoveScheduled(fullyHashedTx, partiallyHashedTx, executionStart);
+
+        out = proxy.executeTransaction(usr, parameters);
+        require(proxy.owner() == address(this), "ds-protest-pause-illegal-storage-change");
+    }
+    function executeTransaction(uint txId)
+        public
+        returns (bytes memory out)
+    {
+        require(txId <= nonce, "ds-pause-inexistent-tx");
+
+        address usr                = transactionDetails[txId].usr;
+        bytes32 codeHash           = transactionDetails[txId].codeHash;
+        bytes memory parameters    = transactionDetails[txId].parameters;
+        uint earliestExecutionTime = transactionDetails[txId].earliestExecutionTime;
+
+        require(getExtCodeHash(usr) == codeHash, "ds-protest-pause-wrong-codehash");
+
+        bytes32 fullyHashedTx      = getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime);
+        bytes32 partiallyHashedTx  = getTransactionDataHash(usr, codeHash, parameters);
+        uint executionStart        = addition(transactionDelays[partiallyHashedTx].scheduleTime, transactionDelays[partiallyHashedTx].totalDelay);
+
+        emit ExecuteTransaction(msg.sender, txId, usr, codeHash, parameters, earliestExecutionTime);
+        checkExecutionAndRemoveScheduled(fullyHashedTx, partiallyHashedTx, executionStart);
 
         out = proxy.executeTransaction(usr, parameters);
         require(proxy.owner() == address(this), "ds-protest-pause-illegal-storage-change");
@@ -243,21 +354,55 @@ contract DSProtestPause is DSAuth, DSNote {
 
     // --- Internal ---
     function schedule(address usr, bytes32 codeHash, bytes memory parameters, uint earliestExecutionTime) internal {
+        bytes32 fullyHashedTx     = getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime);
+        bytes32 partiallyHashedTx = getTransactionDataHash(usr, codeHash, parameters);
+
         require(subtract(earliestExecutionTime, now) <= MAX_DELAY, "ds-protest-pause-delay-not-within-bounds");
         require(earliestExecutionTime >= addition(now, delay), "ds-protest-pause-delay-not-respected");
-        bytes32 fullyHashedTx = getTransactionDataHash(usr, codeHash, parameters, earliestExecutionTime);
-        bytes32 partiallyHashedTx = getTransactionDataHash(usr, codeHash, parameters);
         require(transactionDelays[partiallyHashedTx].scheduleTime == 0, "ds-protest-pause-cannot-schedule-same-tx-twice");
         require(currentlyScheduledTransactions < maxScheduledTransactions, "ds-protest-pause-too-many-scheduled");
-        currentlyScheduledTransactions = addition(currentlyScheduledTransactions, 1);
+        require(txHashId[fullyHashedTx] == 0, "ds-protest-pause-tx-already-scheduled");
+
+        currentlyScheduledTransactions       = addition(currentlyScheduledTransactions, 1);
+        nonce                                = addition(nonce, 1);
         scheduledTransactions[fullyHashedTx] = true;
         transactionDelays[partiallyHashedTx] = TransactionDelay(false, now, subtract(earliestExecutionTime, now));
-        emit ScheduleTransaction(msg.sender, usr, codeHash, parameters, earliestExecutionTime);
+        txHashId[fullyHashedTx]              = nonce;
+        transactionDetails[nonce]            = TransactionDetails(usr, earliestExecutionTime, codeHash, parameters);
+
+        emit ScheduleTransaction(msg.sender, nonce, usr, codeHash, parameters, earliestExecutionTime);
+    }
+    function checkExecutionAndRemoveScheduled(
+      bytes32 fullyHashedTx,
+      bytes32 partiallyHashedTx,
+      uint executionStart
+    ) internal {
+        require(scheduledTransactions[fullyHashedTx], "ds-protest-pause-inexistent-transaction");
+        require(now >= executionStart, "ds-protest-pause-premature-exec");
+        require(now <= addition(executionStart, EXEC_TIME), "ds-protest-pause-expired-tx");
+
+        scheduledTransactions[fullyHashedTx] = false;
+        delete(transactionDelays[partiallyHashedTx]);
+        currentlyScheduledTransactions       = subtract(currentlyScheduledTransactions, 1);
+        delete(transactionDetails[txHashId[fullyHashedTx]]);
+        txHashId[fullyHashedTx]              = 0;
     }
 
     // --- Getters ---
     function getTransactionDelays(address usr, bytes32 codeHash, bytes memory parameters) public view returns (bool, uint256, uint256) {
         bytes32 hashedTx = getTransactionDataHash(usr, codeHash, parameters);
+        return (
+          transactionDelays[hashedTx].protested,
+          transactionDelays[hashedTx].scheduleTime,
+          transactionDelays[hashedTx].totalDelay
+        );
+    }
+    function getTransactionDelays(uint txId) public view returns (bool, uint256, uint256) {
+        bytes32 hashedTx = getTransactionDataHash(
+          transactionDetails[txId].usr,
+          transactionDetails[txId].codeHash,
+          transactionDetails[txId].parameters
+        );
         return (
           transactionDelays[hashedTx].protested,
           transactionDelays[hashedTx].scheduleTime,
