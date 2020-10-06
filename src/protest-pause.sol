@@ -15,10 +15,9 @@
 
 pragma solidity >=0.6.7;
 
-import {DSNote} from "ds-note/note.sol";
 import {DSAuth, DSAuthority} from "ds-auth/auth.sol";
 
-contract DSProtestPause is DSAuth, DSNote {
+contract DSProtestPause is DSAuth {
     // --- Admin ---
     modifier isDelayed { require(msg.sender == address(proxy), "ds-protest-pause-undelayed-call"); _; }
 
