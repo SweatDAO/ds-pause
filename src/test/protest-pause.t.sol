@@ -172,7 +172,6 @@ contract Constructor is DSTest {
         DSProtestPause pause = new DSProtestPause(7 days, 100, address(0x0), authority);
         assertEq(address(pause.authority()), address(authority));
     }
-
 }
 
 contract Admin is Test {
@@ -308,7 +307,7 @@ contract Schedule is Test {
         stranger.scheduleTransaction(pause, usr, codeHash, parameters, eta);
     }
 
-    function testFail_plot_eta_too_soon() public {
+    function testFail_schedule_eta_too_soon() public {
         address      usr = target;
         bytes32      codeHash = extcodehash(usr);
         bytes memory parameters = abi.encodeWithSignature("get()");
@@ -317,7 +316,27 @@ contract Schedule is Test {
         pause.scheduleTransaction(usr, codeHash, parameters, eta);
     }
 
-    function test_plot_populates_scheduled_transactions_mapping() public {
+    function testFail_schedule_above_max_scheduled_txs() public {
+        address      usr = target;
+        bytes32      codeHash = extcodehash(usr);
+        uint         eta = now + pause.delay();
+
+        for (uint i = 0; i <= pause.maxScheduledTransactions(); i++) {
+            bytes memory parameters = abi.encodeWithSignature("give(uint256)", address(i));    
+            pause.scheduleTransaction(usr, codeHash, parameters, eta);
+        }
+    }    
+
+    function testFail_schedule_eta_above_max_delay() public {
+        address      usr = target;
+        bytes32      codeHash = extcodehash(usr);
+        bytes memory parameters = abi.encodeWithSignature("get()");
+        uint         eta = now + pause.MAX_DELAY() + 1;
+
+        pause.scheduleTransaction(usr, codeHash, parameters, eta);
+    }    
+
+    function test_schedule_populates_scheduled_transactions_mapping() public {
         address      usr = target;
         bytes32      codeHash = extcodehash(usr);
         bytes memory parameters = abi.encodeWithSignature("get()");
@@ -327,13 +346,53 @@ contract Schedule is Test {
 
         bytes32 id = keccak256(abi.encode(usr, codeHash, parameters, eta));
         assertTrue(pause.scheduledTransactions(id));
+    } 
+
+    function testFail_schedule_duplicate_transaction() public {
+        address      usr = target;
+        bytes32      codeHash = extcodehash(usr);
+        bytes memory parameters = abi.encodeWithSignature("get()");
+        uint         eta = now + pause.delay();
+
+        pause.scheduleTransaction(usr, codeHash, parameters, eta);
+        pause.scheduleTransaction(usr, codeHash, parameters, eta + 1);
+    }   
+
+    function test_schedule_duplicate_transaction_after_execution() public {
+        address      usr = target;
+        bytes32      codeHash = extcodehash(usr);
+        bytes memory parameters = abi.encodeWithSignature("get()");
+        uint         eta = now + pause.delay();
+
+        pause.scheduleTransaction(usr, codeHash, parameters, eta);
+        hevm.warp(eta);
+        pause.executeTransaction(usr, codeHash, parameters, eta);
+
+        pause.scheduleTransaction(usr, codeHash, parameters, now + pause.delay());
+        bytes32 id = keccak256(abi.encode(usr, codeHash, parameters, now + pause.delay()));
+        assertTrue(pause.scheduledTransactions(id));
+    }
+
+    function test_schedule_duplicate_transaction_after_abandon() public {
+        address      usr = target;
+        bytes32      codeHash = extcodehash(usr);
+        bytes memory parameters = abi.encodeWithSignature("get()");
+        uint         eta = now + pause.delay();
+
+        pause.scheduleTransaction(usr, codeHash, parameters, eta);
+        hevm.warp(eta);
+        pause.abandonTransaction(usr, codeHash, parameters, eta);
+
+        pause.scheduleTransaction(usr, codeHash, parameters, now + pause.delay());
+        bytes32 id = keccak256(abi.encode(usr, codeHash, parameters, now + pause.delay()));
+        assertTrue(pause.scheduledTransactions(id));
     }
 
 }
 
 contract Execute is Test {
 
-    function testFail_delay_not_passed2() public {
+    function testFail_delay_not_passed() public {
         address      usr = target;
         bytes32      codeHash = extcodehash(usr);
         bytes memory parameters = abi.encode(0);
@@ -352,6 +411,17 @@ contract Execute is Test {
         pause.scheduleTransaction(usr, codeHash, parameters, eta);
         hevm.warp(eta);
         pause.executeTransaction(usr, codeHash, parameters, eta);
+        pause.executeTransaction(usr, codeHash, parameters, eta);
+    }
+
+    function testFail_execution_too_late() public {
+        address      usr = target;
+        bytes32      codeHash = extcodehash(usr);
+        bytes memory parameters = abi.encodeWithSignature("get()");
+        uint         eta = now + pause.delay();
+
+        pause.scheduleTransaction(usr, codeHash, parameters, eta);
+        hevm.warp(eta + pause.EXEC_TIME());
         pause.executeTransaction(usr, codeHash, parameters, eta);
     }
 
@@ -415,10 +485,9 @@ contract Execute is Test {
         bytes memory out = pause.executeTransaction(usr, codeHash, parameters, eta);
         assertEq(b32(out), bytes32("Hello")); 
     }
-
 }
 
-contract AbandonTransaction is Test {
+contract Abandon is Test {
 
     function testFail_call_from_unauthorized() public {
         address      usr = target;
@@ -447,6 +516,17 @@ contract AbandonTransaction is Test {
         assertTrue(!pause.scheduledTransactions(id));
     }
 
+    function testFail_abandon_unscheduled_transaction() public {
+        address      usr = target;
+        bytes32      codeHash = extcodehash(usr);
+        bytes memory parameters = abi.encodeWithSignature("get()");
+        uint         eta = now + pause.delay();
+
+        // pause.scheduleTransaction(usr, codeHash, parameters, eta);
+        hevm.warp(eta);
+
+        pause.abandonTransaction(usr, codeHash, parameters, eta);
+    }
 }
 
 contract Protest is Test {
@@ -572,5 +652,4 @@ contract Protest is Test {
         assertEq(proposalScheduleTime, scheduleTime);
         assertEq(pause.MAX_DELAY(), totalDelay);
     }
-
 }
