@@ -387,7 +387,6 @@ contract Schedule is Test {
         bytes32 id = keccak256(abi.encode(usr, codeHash, parameters, now + pause.delay()));
         assertTrue(pause.scheduledTransactions(id));
     }
-
 }
 
 contract Execute is Test {
