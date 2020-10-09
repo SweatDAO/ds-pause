@@ -82,6 +82,7 @@ contract Test is DSTest {
     Hevm hevm;
     DSProtestPause pause;
     Stranger stranger;
+    Stranger protester;
     address target;
 
     function setUp() public {
@@ -90,9 +91,30 @@ contract Test is DSTest {
 
         target = address(new Target());
         stranger = new Stranger();
+        protester = new Stranger();
 
         uint delay = 1 days;
         pause = new DSProtestPause(7 days, delay, address(0x0), new Authority());
+
+        // setting protester
+        address      usr = address(new AdminScripts());
+        bytes32      codeHash = extcodehash(usr);
+        bytes memory parameters = abi.encodeWithSignature("setProtester(address,address)", pause, address(protester));
+        uint         eta = now + pause.delay();
+
+        pause.scheduleTransaction(usr, codeHash, parameters, eta);
+        hevm.warp(eta);
+        pause.executeTransaction(usr, codeHash, parameters, eta);
+
+        assertEq(pause.protester(), address(protester));
+
+        // setting max delayMultiplier
+        parameters = abi.encodeWithSignature("setDelayMultiplier(address,uint256)", pause, 3);
+        eta = now + pause.delay();
+
+        pause.scheduleTransaction(usr, codeHash, parameters, eta);
+        hevm.warp(eta);
+        pause.executeTransaction(usr, codeHash, parameters, eta);
     }
 
     // returns the 1st 32 bytes of data from a bytes array
@@ -115,11 +137,17 @@ contract AdminScripts {
     function setDelay(DSProtestPause pause, uint delay) public {
         pause.setDelay(delay);
     }
+    function setDelayMultiplier(DSProtestPause pause, uint multiplier_) public {
+        pause.setDelayMultiplier(multiplier_);
+    }
     function setOwner(DSProtestPause pause, address owner) public {
         pause.setOwner(owner);
     }
     function setAuthority(DSProtestPause pause, DSAuthority authority) public {
         pause.setAuthority(authority);
+    }
+    function setProtester(DSProtestPause pause, address protester_) public {
+        pause.setProtester(protester_);
     }
 }
 
@@ -144,7 +172,6 @@ contract Constructor is DSTest {
         DSProtestPause pause = new DSProtestPause(7 days, 100, address(0x0), authority);
         assertEq(address(pause.authority()), address(authority));
     }
-
 }
 
 contract Admin is Test {
@@ -207,9 +234,69 @@ contract Admin is Test {
 
         assertEq(pause.delay(), 0);
     }
+
+    function testFail_set_delay_above_max() public {
+        address      usr = address(new AdminScripts());
+        bytes32      codeHash = extcodehash(usr);
+        bytes memory parameters = abi.encodeWithSignature("setDelay(address,uint256)", pause, 28 days + 1);
+        uint         eta = now + pause.delay();
+
+        pause.scheduleTransaction(usr, codeHash, parameters, eta);
+        hevm.warp(eta);
+        pause.executeTransaction(usr, codeHash, parameters, eta);
+    }
+
+    // --- delay multiplier ---
+
+    function testFail_cannot_set_delay_multiplier_without_delay() public {
+        pause.setDelayMultiplier(2);
+    }
+
+    function test_set_delay_multiplier_with_delay() public {
+        address      usr = address(new AdminScripts());
+        bytes32      codeHash = extcodehash(usr);
+        bytes memory parameters = abi.encodeWithSignature("setDelayMultiplier(address,uint256)", pause, 2);
+        uint         eta = now + pause.delay();
+
+        pause.scheduleTransaction(usr, codeHash, parameters, eta);
+        hevm.warp(eta);
+        pause.executeTransaction(usr, codeHash, parameters, eta);
+
+        assertEq(pause.delayMultiplier(), 2);
+    }
+
+    function testFail_set_delay_multiplier_above_max() public {
+        address      usr = address(new AdminScripts());
+        bytes32      codeHash = extcodehash(usr);
+        bytes memory parameters = abi.encodeWithSignature("setDelayMultiplier(address,uint256)", pause, 4);
+        uint         eta = now + pause.delay();
+
+        pause.scheduleTransaction(usr, codeHash, parameters, eta);
+        hevm.warp(eta);
+        pause.executeTransaction(usr, codeHash, parameters, eta);
+    }
+
+    // --- protester ---
+
+    function testFail_cannot_set_protester_without_delay() public {
+        pause.setProtester(address(stranger));
+    }
+
+    function test_set_protester_with_delay() public {
+        address      usr = address(new AdminScripts());
+        bytes32      codeHash = extcodehash(usr);
+        bytes memory parameters = abi.encodeWithSignature("setProtester(address,address)", pause, address(stranger));
+        uint         eta = now + pause.delay();
+
+        pause.scheduleTransaction(usr, codeHash, parameters, eta);
+        hevm.warp(eta);
+        pause.executeTransaction(usr, codeHash, parameters, eta);
+
+        assertEq(pause.protester(), address(stranger));
+    }
 }
 
-contract Plot is Test {
+contract Schedule is Test {
 
     function testFail_call_from_unauthorized() public {
         address      usr = target;
@@ -220,7 +307,7 @@ contract Plot is Test {
         stranger.scheduleTransaction(pause, usr, codeHash, parameters, eta);
     }
 
-    function testFail_plot_eta_too_soon() public {
+    function testFail_schedule_eta_too_soon() public {
         address      usr = target;
         bytes32      codeHash = extcodehash(usr);
         bytes memory parameters = abi.encodeWithSignature("get()");
@@ -229,7 +316,27 @@ contract Plot is Test {
         pause.scheduleTransaction(usr, codeHash, parameters, eta);
     }
 
-    function test_plot_populates_scheduled_transactions_mapping() public {
+    function testFail_schedule_above_max_scheduled_txs() public {
+        address      usr = target;
+        bytes32      codeHash = extcodehash(usr);
+        uint         eta = now + pause.delay();
+
+        for (uint i = 0; i <= pause.maxScheduledTransactions(); i++) {
+            bytes memory parameters = abi.encodeWithSignature("give(uint256)", address(i));    
+            pause.scheduleTransaction(usr, codeHash, parameters, eta);
+        }
+    }    
+
+    function testFail_schedule_eta_above_max_delay() public {
+        address      usr = target;
+        bytes32      codeHash = extcodehash(usr);
+        bytes memory parameters = abi.encodeWithSignature("get()");
+        uint         eta = now + pause.MAX_DELAY() + 1;
+
+        pause.scheduleTransaction(usr, codeHash, parameters, eta);
+    }    
+
+    function test_schedule_populates_scheduled_transactions_mapping() public {
         address      usr = target;
         bytes32      codeHash = extcodehash(usr);
         bytes memory parameters = abi.encodeWithSignature("get()");
@@ -239,11 +346,50 @@ contract Plot is Test {
 
         bytes32 id = keccak256(abi.encode(usr, codeHash, parameters, eta));
         assertTrue(pause.scheduledTransactions(id));
+    } 
+
+    function testFail_schedule_duplicate_transaction() public {
+        address      usr = target;
+        bytes32      codeHash = extcodehash(usr);
+        bytes memory parameters = abi.encodeWithSignature("get()");
+        uint         eta = now + pause.delay();
+
+        pause.scheduleTransaction(usr, codeHash, parameters, eta);
+        pause.scheduleTransaction(usr, codeHash, parameters, eta + 1);
+    }   
+
+    function test_schedule_duplicate_transaction_after_execution() public {
+        address      usr = target;
+        bytes32      codeHash = extcodehash(usr);
+        bytes memory parameters = abi.encodeWithSignature("get()");
+        uint         eta = now + pause.delay();
+
+        pause.scheduleTransaction(usr, codeHash, parameters, eta);
+        hevm.warp(eta);
+        pause.executeTransaction(usr, codeHash, parameters, eta);
+
+        pause.scheduleTransaction(usr, codeHash, parameters, now + pause.delay());
+        bytes32 id = keccak256(abi.encode(usr, codeHash, parameters, now + pause.delay()));
+        assertTrue(pause.scheduledTransactions(id));
     }
 
+    function test_schedule_duplicate_transaction_after_abandon() public {
+        address      usr = target;
+        bytes32      codeHash = extcodehash(usr);
+        bytes memory parameters = abi.encodeWithSignature("get()");
+        uint         eta = now + pause.delay();
+
+        pause.scheduleTransaction(usr, codeHash, parameters, eta);
+        hevm.warp(eta);
+        pause.abandonTransaction(usr, codeHash, parameters, eta);
+
+        pause.scheduleTransaction(usr, codeHash, parameters, now + pause.delay());
+        bytes32 id = keccak256(abi.encode(usr, codeHash, parameters, now + pause.delay()));
+        assertTrue(pause.scheduledTransactions(id));
+    }
 }
 
-contract Exec is Test {
+contract Execute is Test {
 
     function testFail_delay_not_passed() public {
         address      usr = target;
@@ -264,6 +410,17 @@ contract Exec is Test {
         pause.scheduleTransaction(usr, codeHash, parameters, eta);
         hevm.warp(eta);
         pause.executeTransaction(usr, codeHash, parameters, eta);
+        pause.executeTransaction(usr, codeHash, parameters, eta);
+    }
+
+    function testFail_execution_too_late() public {
+        address      usr = target;
+        bytes32      codeHash = extcodehash(usr);
+        bytes memory parameters = abi.encodeWithSignature("get()");
+        uint         eta = now + pause.delay();
+
+        pause.scheduleTransaction(usr, codeHash, parameters, eta);
+        hevm.warp(eta + pause.EXEC_TIME());
         pause.executeTransaction(usr, codeHash, parameters, eta);
     }
 
@@ -325,12 +482,11 @@ contract Exec is Test {
         hevm.warp(eta);
 
         bytes memory out = pause.executeTransaction(usr, codeHash, parameters, eta);
-        assertEq(b32(out), bytes32("Hello"));
+        assertEq(b32(out), bytes32("Hello")); 
     }
-
 }
 
-contract Drop is Test {
+contract Abandon is Test {
 
     function testFail_call_from_unauthorized() public {
         address      usr = target;
@@ -359,9 +515,20 @@ contract Drop is Test {
         assertTrue(!pause.scheduledTransactions(id));
     }
 
+    function testFail_abandon_unscheduled_transaction() public {
+        address      usr = target;
+        bytes32      codeHash = extcodehash(usr);
+        bytes memory parameters = abi.encodeWithSignature("get()");
+        uint         eta = now + pause.delay();
+
+        // pause.scheduleTransaction(usr, codeHash, parameters, eta);
+        hevm.warp(eta);
+
+        pause.abandonTransaction(usr, codeHash, parameters, eta);
+    }
 }
 
-contract AbandonTransaction is Test {
+contract Protest is Test {
 
     function testFail_call_from_unauthorized() public {
         address      usr = target;
@@ -372,22 +539,116 @@ contract AbandonTransaction is Test {
         pause.scheduleTransaction(usr, codeHash, parameters, eta);
         hevm.warp(eta);
 
-        stranger.abandonTransaction(pause, usr, codeHash, parameters, eta);
+        stranger.protestAgainstTransaction(pause, usr, codeHash, parameters);
     }
 
-    function test_abandon_scheduled_tx() public {
+    function test_protest_scheduled_tx() public {
         address      usr = target;
         bytes32      codeHash = extcodehash(usr);
         bytes memory parameters = abi.encodeWithSignature("get()");
         uint         eta = now + pause.delay();
+        uint         proposalScheduleTime = now;
 
         pause.scheduleTransaction(usr, codeHash, parameters, eta);
 
-        hevm.warp(eta);
-        pause.abandonTransaction(usr, codeHash, parameters, eta);
+        bytes32 dataHash = pause.getTransactionDataHash(usr, codeHash, parameters);
+        (bool protested, uint scheduleTime, uint totalDelay) = pause.getTransactionDelays(dataHash);
+        assertTrue(!protested);
+        assertEq(proposalScheduleTime, scheduleTime);
+        assertEq(eta - now, totalDelay);
+        assertTrue(pause.protestWindowAvailable(dataHash));
+        assertEq(pause.timeUntilProposalProtestDeadline(dataHash), (eta-scheduleTime) / 2);
 
-        bytes32 id = keccak256(abi.encode(usr, codeHash, parameters, eta));
-        assertTrue(!pause.scheduledTransactions(id));
+        hevm.warp(now + 10);
+        assertEq(pause.timeUntilProposalProtestDeadline(dataHash), ((eta-scheduleTime) / 2) - 10);
+        assertTrue(pause.protestWindowAvailable(usr, codeHash, parameters));
+        protester.protestAgainstTransaction(pause, usr, codeHash, parameters);
+
+
+        (protested, scheduleTime, totalDelay) = pause.getTransactionDelays(dataHash);
+        assertTrue(protested);
+        assertEq(proposalScheduleTime, scheduleTime);
+        assertEq(pause.delay() * pause.delayMultiplier(), totalDelay);
+        assertTrue(!pause.protestWindowAvailable(dataHash));
+        assertEq(pause.timeUntilProposalProtestDeadline(dataHash), 0);
+
+        hevm.warp(scheduleTime + totalDelay);
+        bytes memory out = pause.executeTransaction(usr, codeHash, parameters, eta);
+        assertEq(b32(out), bytes32("Hello"));
+
     }
 
+    function testFail_protest_scheduled_tx_twice() public {
+        address      usr = target;
+        bytes32      codeHash = extcodehash(usr);
+        bytes memory parameters = abi.encodeWithSignature("get()");
+        uint         eta = now + pause.delay();
+        uint         proposalScheduleTime = now;
+
+        pause.scheduleTransaction(usr, codeHash, parameters, eta);
+
+        hevm.warp(now + 1);
+        protester.protestAgainstTransaction(pause, usr, codeHash, parameters);
+
+        protester.protestAgainstTransaction(pause, usr, codeHash, parameters);
+    }
+
+    function testFail_protest_after_protesterLifetime() public {
+        hevm.warp(pause.protesterLifetime() + pause.deploymentTime());
+
+        address      usr = target;
+        bytes32      codeHash = extcodehash(usr);
+        bytes memory parameters = abi.encodeWithSignature("get()");
+        uint         eta = now + pause.delay();
+        uint         proposalScheduleTime = now;
+
+        pause.scheduleTransaction(usr, codeHash, parameters, eta);
+
+        hevm.warp(now + 1);
+
+        protester.protestAgainstTransaction(pause, usr, codeHash, parameters);
+    }    
+
+    function testFail_protest_after_protestEnd() public {
+        address      usr = target;
+        bytes32      codeHash = extcodehash(usr);
+        bytes memory parameters = abi.encodeWithSignature("get()");
+        uint         eta = now + pause.delay();
+        uint         proposalScheduleTime = now;
+
+        pause.scheduleTransaction(usr, codeHash, parameters, eta);
+
+        bytes32 dataHash = pause.getTransactionDataHash(usr, codeHash, parameters);
+
+        assertTrue(!pause.protestWindowAvailable(dataHash));
+        hevm.warp(now + ((eta - now) / 2));
+        assertTrue(pause.protestWindowAvailable(dataHash));
+
+        protester.protestAgainstTransaction(pause, usr, codeHash, parameters);
+    }    
+
+    function test_protest_scheduled_tx_max_delay_bound() public {
+        address      usr = address(new AdminScripts());
+        bytes32      codeHash = extcodehash(usr);
+        bytes memory parameters = abi.encodeWithSignature("setDelay(address,uint256)", pause, 14 days);
+        uint         eta = now + pause.delay();
+
+        pause.scheduleTransaction(usr, codeHash, parameters, eta);
+        hevm.warp(eta);
+        pause.executeTransaction(usr, codeHash, parameters, eta);
+
+        parameters = abi.encodeWithSignature("get()");
+        eta = now + pause.delay();
+        uint proposalScheduleTime = now;
+
+        pause.scheduleTransaction(usr, codeHash, parameters, eta);
+
+        hevm.warp(now + 1);
+        protester.protestAgainstTransaction(pause, usr, codeHash, parameters);
+
+        (bool protested, uint scheduleTime, uint totalDelay) = pause.getTransactionDelays(usr, codeHash, parameters);
+        assertTrue(protested);
+        assertEq(proposalScheduleTime, scheduleTime);
+        assertEq(pause.MAX_DELAY(), totalDelay);
+    }
 }
