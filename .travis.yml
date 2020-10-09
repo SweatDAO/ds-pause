@@ -1,7 +1,7 @@
 language: nix
 script: |
-  nix-env -if --quiet https://github.com/cachix/cachix/tarball/master --substituters https://cachix.cachix.org --trusted-public-keys cachix.cachix.org-1:eWNHQldwUO7G2VkjpnjDbWwy4KQ/HNxht7H4SSoMckM=
+  nix-env -if https://github.com/cachix/cachix/tarball/master --substituters https://cachix.cachix.org --trusted-public-keys cachix.cachix.org-1:eWNHQldwUO7G2VkjpnjDbWwy4KQ/HNxht7H4SSoMckM= --quiet
   cachix use dapp
   git clone --recursive https://github.com/dapphub/dapptools $HOME/.dapp/dapptools
-  nix-env -f --quiet $HOME/.dapp/dapptools -iA dapp solc
+  nix-env -f $HOME/.dapp/dapptools -iA dapp solc --quiet
   dapp --use solc:0.6.7 test
