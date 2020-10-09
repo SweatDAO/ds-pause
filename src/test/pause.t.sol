@@ -259,7 +259,7 @@ contract Schedule is Test {
         assertTrue(pause.scheduledTransactions(id));
     }
 
-    function testFail_schedule_duplicate_transactionP() public {
+    function testFail_schedule_duplicate_transaction() public {
         address      usr = target;
         bytes32      codeHash = extcodehash(usr);
         bytes memory parameters = abi.encodeWithSignature("get()");
