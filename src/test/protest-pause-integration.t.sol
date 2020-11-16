@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-pragma solidity >=0.6.7;
+pragma solidity 0.6.7;
 
 import {DSTest} from "ds-test/test.sol";
 import {DSProxy} from "ds-proxy/proxy.sol";
@@ -170,7 +170,7 @@ contract Test is DSTest {
         voter = new Voter();
 
         // create gov token
-        gov = new DSToken("PROT");
+        gov = new DSToken("PROT", "PROT");
         gov.mint(address(voter), votes);
         gov.setOwner(address(0));
 
@@ -603,7 +603,7 @@ contract IntegrationVotingScenarios is DSTest {
         voter3 = new Voter();
 
         // create gov token
-        gov = new DSToken("PROT");
+        gov = new DSToken("PROT", "PROT");
         gov.mint(address(voter1), 100);
         gov.mint(address(voter2), 1000);
         gov.mint(address(voter3), 1000000000);

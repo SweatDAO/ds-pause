@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-pragma solidity >=0.6.7;
+pragma solidity 0.6.7;
 
 import {DSTest} from "ds-test/test.sol";
 import {DSAuth, DSAuthority} from "ds-auth/auth.sol";
@@ -233,10 +233,10 @@ contract Schedule is Test {
         uint         eta = now + pause.delay();
 
         for (uint i = 0; i <= pause.maxScheduledTransactions(); i++) {
-            bytes memory parameters = abi.encodeWithSignature("give(uint256)", address(i));    
+            bytes memory parameters = abi.encodeWithSignature("give(uint256)", address(i));
             pause.scheduleTransaction(usr, codeHash, parameters, eta);
         }
-    }  
+    }
 
     function testFail_schedule_eta_above_max_delay() public {
         address      usr = target;
@@ -245,7 +245,7 @@ contract Schedule is Test {
         uint         eta = now + pause.MAX_DELAY() + 1;
 
         pause.scheduleTransaction(usr, codeHash, parameters, eta);
-    } 
+    }
 
     function test_schedule_populates_scheduled_transactions_mapping() public {
         address      usr = target;
@@ -267,7 +267,7 @@ contract Schedule is Test {
 
         pause.scheduleTransaction(usr, codeHash, parameters, eta);
         pause.scheduleTransaction(usr, codeHash, parameters, eta + 1);
-    }   
+    }
 
     function test_schedule_duplicate_transaction_after_execution() public {
         address      usr = target;

@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-pragma solidity >=0.6.7;
+pragma solidity 0.6.7;
 
 import {DSTest} from "ds-test/test.sol";
 import {DSAuth, DSAuthority} from "ds-auth/auth.sol";
@@ -322,10 +322,10 @@ contract Schedule is Test {
         uint         eta = now + pause.delay();
 
         for (uint i = 0; i <= pause.maxScheduledTransactions(); i++) {
-            bytes memory parameters = abi.encodeWithSignature("give(uint256)", address(i));    
+            bytes memory parameters = abi.encodeWithSignature("give(uint256)", address(i));
             pause.scheduleTransaction(usr, codeHash, parameters, eta);
         }
-    }    
+    }
 
     function testFail_schedule_eta_above_max_delay() public {
         address      usr = target;
@@ -334,7 +334,7 @@ contract Schedule is Test {
         uint         eta = now + pause.MAX_DELAY() + 1;
 
         pause.scheduleTransaction(usr, codeHash, parameters, eta);
-    }    
+    }
 
     function test_schedule_populates_scheduled_transactions_mapping() public {
         address      usr = target;
@@ -346,7 +346,7 @@ contract Schedule is Test {
 
         bytes32 id = keccak256(abi.encode(usr, codeHash, parameters, eta));
         assertTrue(pause.scheduledTransactions(id));
-    } 
+    }
 
     function testFail_schedule_duplicate_transaction() public {
         address      usr = target;
@@ -356,7 +356,7 @@ contract Schedule is Test {
 
         pause.scheduleTransaction(usr, codeHash, parameters, eta);
         pause.scheduleTransaction(usr, codeHash, parameters, eta + 1);
-    }   
+    }
 
     function test_schedule_duplicate_transaction_after_execution() public {
         address      usr = target;
@@ -482,7 +482,7 @@ contract Execute is Test {
         hevm.warp(eta);
 
         bytes memory out = pause.executeTransaction(usr, codeHash, parameters, eta);
-        assertEq(b32(out), bytes32("Hello")); 
+        assertEq(b32(out), bytes32("Hello"));
     }
 }
 
@@ -607,7 +607,7 @@ contract Protest is Test {
         hevm.warp(now + 1);
 
         protester.protestAgainstTransaction(pause, usr, codeHash, parameters);
-    }    
+    }
 
     function testFail_protest_after_protestEnd() public {
         address      usr = target;
@@ -625,7 +625,7 @@ contract Protest is Test {
         assertTrue(pause.protestWindowAvailable(dataHash));
 
         protester.protestAgainstTransaction(pause, usr, codeHash, parameters);
-    }    
+    }
 
     function test_protest_scheduled_tx_max_delay_bound() public {
         address      usr = address(new AdminScripts());
