@@ -136,6 +136,16 @@ contract AbandonTransactionProposal {
     }
 }
 
+contract AuthGovActions {
+    function setRootUser(DSRoles target, address account, bool isRoot) public {
+        target.setRootUser(account, isRoot);
+    }
+
+    function setOwner(DSProtestPause target, address account) public {
+        target.setOwner(account);
+    }
+}
+
 
 // ------------------------------------------------------------------
 // Shared Test Setup
@@ -413,18 +423,18 @@ contract Integration is Test {
     function test_governance_delegate_quorum_transition() public {
 
         // 1. Only multisig rules
-        DSDelegateRoles roles = new DSDelegateRoles();
-        DSProtestPause pause = new DSProtestPause(7 days, delay, msg.sender, roles);
+        DSRoles roles = new DSRoles();
+        owners.push(address(this));
+        multisig = new MultiSigWallet(owners, required);
+        DSProtestPause pause = new DSProtestPause(7 days, delay, address(multisig), DSAuthority(roles));
 
         target.addAuthorization(address(pause.proxy()));
         target.removeAuthorization(address(this));
 
         assertEq(target.val(), 0);
 
-        owners.push(address(this));
-
-        multisig = new MultiSigWallet(owners, required);
-        roles.setOwner(address(multisig));
+        roles.setAuthority(DSAuthority(roles));
+        roles.setOwner(address(pause.proxy()));
 
         assertEq(multisig.owners(0), msg.sender);
         assertEq(multisig.owners(1), address(this));
@@ -441,9 +451,8 @@ contract Integration is Test {
         multisig.submitTransaction("First Proposal", address(pause), 0, parameters);
 
         hevm.warp(earliestExecutionTime);
-        parameters = abi.encodeWithSignature("executeTransaction(address,bytes32,bytes,uint256)", usr, codeHash, proposalParameters, earliestExecutionTime);
+        pause.executeTransaction(usr, codeHash, proposalParameters, earliestExecutionTime);
 
-        multisig.submitTransaction("First Proposal", address(pause), 0, parameters);
         assertEq(target.val(), 1);
 
         // 2. voteQuorum created
@@ -457,20 +466,26 @@ contract Integration is Test {
             100,         // votingPeriod
             1000,        // proposalLifetime
             address(prot),
-            address(pause)
+            address(pause),
+            address(0)   // guardian
         );
 
-        // 3. multisig assigns voteQuorum as authority
-        usr = address(roles);
+        // 3. multisig assigns voteQuorum as root
+        usr = address(new AuthGovActions());
         codeHash = extcodehash(usr);
-        proposalParameters = abi.encodeWithSignature("setRootUser(address,bool)", address(voteQuorum), true);
-        multisig.submitTransaction("Adding votingQuorum as root", usr, 0, proposalParameters);
+        proposalParameters = abi.encodeWithSignature("setRootUser(address,address,bool)", address(roles), address(voteQuorum), true);
+        earliestExecutionTime = now + delay;
 
+        parameters = abi.encodeWithSignature("scheduleTransaction(address,bytes32,bytes,uint256)", usr, codeHash, proposalParameters, earliestExecutionTime);
+
+        multisig.submitTransaction("Adding votingQuorum as root", address(pause), 0, parameters);
+
+        hevm.warp(earliestExecutionTime);
+        pause.executeTransaction(usr, codeHash, proposalParameters, earliestExecutionTime);
         assertTrue(roles.isUserRoot(address(voteQuorum)));
 
         // 4. both can transact
         // 4.1 multisig transacts through pause
-
         usr = address(new SimpleAction());
         codeHash = extcodehash(usr);
         proposalParameters = abi.encodeWithSignature("executeTransaction(address,uint256)", target, 41);
@@ -481,13 +496,11 @@ contract Integration is Test {
         multisig.submitTransaction("First Proposal", address(pause), 0, parameters);
 
         hevm.warp(earliestExecutionTime);
-        parameters = abi.encodeWithSignature("executeTransaction(address,bytes32,bytes,uint256)", usr, codeHash, proposalParameters, earliestExecutionTime);
-
-        multisig.submitTransaction("First Proposal", address(pause), 0, parameters);
+        pause.executeTransaction(usr, codeHash, proposalParameters, earliestExecutionTime);
         assertEq(target.val(), 41);
 
 
-        // 4.2 voteQuorum transacts through pause
+        // // 4.2 voteQuorum transacts through pause
         prot.delegate(address(this));
 
         usr = address(new SimpleAction());
@@ -507,13 +520,21 @@ contract Integration is Test {
 
         assertEq(target.val(), 42);
 
-        // 5. multisig sets owner to 0x0
+        // 5. multisig transfers ownership to governance
         usr = address(roles);
+        usr = address(new AuthGovActions());
         codeHash = extcodehash(usr);
-        proposalParameters = abi.encodeWithSignature("setOwner(address)", address(0x0));
-        multisig.submitTransaction("Revoking governance ownership", usr, 0, proposalParameters);
+        proposalParameters = abi.encodeWithSignature("setOwner(address,address)", address(pause), address(voteQuorum));
+        earliestExecutionTime = now + delay;
 
-        assertEq(address(roles.owner()), address(0x0));
+        parameters = abi.encodeWithSignature("scheduleTransaction(address,bytes32,bytes,uint256)", usr, codeHash, proposalParameters, earliestExecutionTime);
+
+        multisig.submitTransaction("Transfering pause ownership to voteQuorum", address(pause), 0, parameters);
+
+        hevm.warp(earliestExecutionTime);
+        pause.executeTransaction(usr, codeHash, proposalParameters, earliestExecutionTime);
+
+        assertEq(address(pause.owner()), address(voteQuorum));
 
         // 5.1 multisig can no longer transact
         usr = address(new SimpleAction());
@@ -526,9 +547,7 @@ contract Integration is Test {
         multisig.submitTransaction("First Proposal", address(pause), 0, parameters);
 
         hevm.warp(earliestExecutionTime);
-        parameters = abi.encodeWithSignature("executeTransaction(address,bytes32,bytes,uint256)", usr, codeHash, proposalParameters, earliestExecutionTime);
-
-        multisig.submitTransaction("First Proposal", address(pause), 0, parameters);
+        try pause.executeTransaction(usr, codeHash, proposalParameters, earliestExecutionTime) {revert("call should fail");} catch {}
         assertEq(target.val(), 42); // no effect
 
         // 5.2 votingQuorum can still transact
