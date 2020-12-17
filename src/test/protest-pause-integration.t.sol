@@ -465,10 +465,12 @@ contract Integration is Test {
             500 ether,   // proposalThreshold
             100,         // votingPeriod
             1000,        // proposalLifetime
-            address(prot),
             address(pause),
-            address(0)   // guardian
+            address(this)   // guardian
         );
+
+        voteQuorum.modifyParameters("protocolToken", address(prot));
+        voteQuorum.abdicate();
 
         // 3. multisig assigns voteQuorum as root
         usr = address(new AuthGovActions());
