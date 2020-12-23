@@ -84,7 +84,6 @@ contract DSProtestPause is DSAuth {
     // --- Init ---
     constructor(uint protesterLifetime_, uint delay_, address owner_, DSAuthority authority_) public {
         require(delay_ <= MAX_DELAY, "ds-protest-pause-delay-not-within-bounds");
-        require(both(protestEnd > 0, protestEnd < 1000), "ds-protest-pause-invalid-protest-deadline");
         delay = delay_;
         owner = owner_;
         authority = authority_;
