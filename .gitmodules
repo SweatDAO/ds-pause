@@ -4,9 +4,6 @@
 [submodule "lib/ds-token"]
 	path = lib/ds-token
 	url = https://github.com/reflexer-labs/ds-token.git
-[submodule "lib/ds-proxy"]
-	path = lib/ds-proxy
-	url = https://github.com/reflexer-labs/ds-proxy.git
 [submodule "lib/ds-spell"]
 	path = lib/ds-spell
 	url = https://github.com/reflexer-labs/ds-spell.git
